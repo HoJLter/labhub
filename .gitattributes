@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+# Shell-скрипты и Dockerfile должны оставаться LF: при CRLF они ломаются
+# (bash: /usr/bin/env: bad interpreter, а Dockerfile — на строке continuation).
+*.sh text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+*.ps1 text eol=crlf
+
+# Бинарные/вендорные файлы не трогаем
+*.svg text eol=lf

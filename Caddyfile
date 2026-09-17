@@ -1,0 +1,30 @@
+# Caddy: reverse-proxy на приложение, gzip, security-заголовки.
+#
+# Вариант А (по умолчанию): доступ по IP или без домена — обычный HTTP на :80.
+# Вариант Б (есть домен): замените «:80» на ваш домен — Caddy сам получит
+#   сертификат Let's Encrypt и включит HTTPS:
+#
+#   labs.mysite.ru {
+#       encode gzip
+#       reverse_proxy app:3000 {
+#           flush_interval -1
+#       }
+#   }
+#
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	encode gzip
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	reverse_proxy app:3000 {
+		# -1 = моментальная отправка чанков (важно для Range-стримов видео/PDF)
+		flush_interval -1
+	}
+}

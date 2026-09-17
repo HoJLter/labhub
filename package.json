@@ -1,0 +1,17 @@
+{
+  "name": "lab-hub",
+  "version": "1.0.0",
+  "description": "Сайт-хранилище лабораторных работ: каталог, PDF/DOCX/MP4-читалки, внешние источники, админ-панель, собственная аналитика",
+  "type": "module",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "seed": "node server/seed.js --force",
+    "backup": "node scripts/backup.js"
+  },
+  "license": "MIT"
+}

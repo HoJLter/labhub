@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Инвайт-код — __SITE_NAME__</title>
+<link rel="stylesheet" href="/styles.css">
+<meta name="lh-accent" content="__ACCENT__">
+<script src="/theme.js"></script>
+<style>
+  body { display: grid; place-items: center; min-height: 100vh; }
+  .invite-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 32px; box-shadow: var(--shadow-md); text-align: center; }
+  .invite-card h1 { font-size: 19px; margin: 12px 0 6px; }
+  .invite-card p { color: var(--text-2); font-size: 13.5px; margin: 0 0 18px; }
+  .invite-card input { width: 100%; height: 42px; text-align: center; font-size: 16px; letter-spacing: 2px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-2); color: var(--text); margin-bottom: 12px; }
+  .invite-card input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .invite-err { color: var(--err); font-size: 13px; min-height: 1.4em; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<form class="invite-card" id="f">
+  <div style="width:48px;height:48px;border-radius:14px;margin:0 auto;background:linear-gradient(135deg,var(--accent),#a855f7);display:grid;place-items:center;color:#fff">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+  </div>
+  <h1>__SITE_NAME__</h1>
+  <p>Сайт работает в закрытом режиме. Введите инвайт-код вашей группы.</p>
+  <input id="code" type="password" autocomplete="off" placeholder="••••••" required>
+  <div class="invite-err" id="err"></div>
+  <button class="btn btn-primary" style="width:100%" type="submit">Войти</button>
+</form>
+<script src="/invite.js"></script>
+</body>
+</html>
