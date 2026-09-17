@@ -368,6 +368,8 @@ input[type=checkbox].row-check { accent-color: var(--accent); width: 14px; heigh
   overflow: auto;
 }
 
+/* Подсветка при перетаскивании файла: класс вешается на .notes-editor (см. admin-notes.js) */
+.notes-editor.dragging,
 .notes-pane.dragging { outline: 2px dashed var(--accent); outline-offset: -4px; }
 
 .notes-suggest {
