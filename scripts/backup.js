@@ -22,13 +22,14 @@ if (fs.existsSync(dbPath)) {
   console.log(`[backup] БД: ${dbOut} (${(fs.statSync(dbOut).size / 1048576).toFixed(1)} МБ)`);
 }
 
-// 2. Каталог файлов (tar, если доступен; иначе zip-фолбэк не делаем — rsync на хосте)
-const filesDir = path.join(DATA, 'files');
+// 2. Каталог файлов и vault заметок (tar, если доступен; иначе zip-фолбэк не делаем — rsync на хосте)
+// Заметки — это обычные .md-файлы, но терять их так же больно, как вложения, поэтому кладём в тот же архив.
 const tarOut = path.join(BACKUPS, `files-${stamp}.tar`);
-if (fs.existsSync(filesDir)) {
-  const r = spawnSync('tar', ['-cf', tarOut, '-C', DATA, 'files'], { stdio: 'inherit' });
-  if (r.status === 0) console.log(`[backup] Файлы: ${tarOut}`);
-  else console.warn('[backup] tar недоступен — скопируйте каталог files/ вручную (rsync)');
+const payload = ['files', 'vault'].filter(d => fs.existsSync(path.join(DATA, d)));
+if (payload.length) {
+  const r = spawnSync('tar', ['-cf', tarOut, '-C', DATA, ...payload], { stdio: 'inherit' });
+  if (r.status === 0) console.log(`[backup] Файлы (${payload.join(', ')}): ${tarOut}`);
+  else console.warn('[backup] tar недоступен — скопируйте каталоги files/ и vault/ вручную (rsync)');
 }
 
 // 3. Ротация: храним KEEP последних

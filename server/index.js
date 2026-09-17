@@ -12,6 +12,8 @@ import { Router, HttpError, parseCookies, readJson, sendJson, sendText, security
 import { ensureAdminUser, getSession } from './auth.js';
 import { registerPublicRoutes } from './routes/public.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerNoteRoutes } from './routes/notes.js';
+import { noteBySlug, startVaultWatcher } from './vault.js';
 import { seed } from './seed.js';
 import { startCacheJanitor } from './cache.js';
 import { startHealthChecker } from './health.js';
@@ -38,6 +40,8 @@ setTimeout(() => {
 startCacheJanitor();
 startHealthChecker();
 startStatsJanitor();
+// Vault заметок: первичная индексация + слежение за правками, сделанными в самом Obsidian
+startVaultWatcher();
 // Автоочистка корзины: soft-deleted старше 30 дней удаляются безвозвратно (раздел 8.3)
 setInterval(() => {
   const cutoff = now() - 30 * 86400000;
@@ -49,6 +53,7 @@ setInterval(() => {
 
 registerPublicRoutes(router);
 registerAdminRoutes(router);
+registerNoteRoutes(router);
 
 // ——— SSR-мета для публичных страниц (SEO, раздел 9.4) ———
 function metaForRoute(pathname, settings) {
@@ -66,6 +71,22 @@ function metaForRoute(pathname, settings) {
     }
   } else if (parts[0] === 'search') {
     title = `Поиск — ${name}`;
+  } else if (parts[0] === 'notes') {
+    // SSR-мета для раздела заметок (страница, граф, теги)
+    if (parts[1] === 'graph') {
+      title = `Граф заметок — ${name}`;
+      description = 'Связи между заметками';
+    } else if (parts[1] === 'tags') {
+      title = `Теги заметок — ${name}`;
+    } else if (parts[1] === 'tag' && parts[2]) {
+      title = `#${parts[2]} — заметки ${name}`;
+    } else if (parts[1]) {
+      const n = noteBySlug(parts[1]);
+      if (n) { title = `${n.title} — ${name}`; description = String(n.excerpt || '').slice(0, 200); ogType = 'article'; }
+    } else {
+      title = `Заметки — ${name}`;
+      description = 'Конспекты, методички и связи между ними';
+    }
   } else if (parts[0] && parts[0] !== 'admin') {
     const f = get("SELECT * FROM folders WHERE slug=? AND visibility != 'private' AND deleted_at IS NULL", parts[0]);
     if (f) { title = `${f.title} — ${name}`; description = String(f.description || '').slice(0, 200); }
@@ -192,7 +213,7 @@ const server = http.createServer(async (req, res) => {
         throw new HttpError(401, 'Требуется вход', 'unauthorized');
       }
       // JSON-тело (кроме raw-upload)
-      const isRawUpload = pathname === '/api/admin/upload';
+      const isRawUpload = pathname === '/api/admin/upload' || pathname === '/api/admin/notes/attach';
       if (!isRawUpload && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
         req.jsonBody = await readJson(req, 20 * 1024 * 1024);
       }
@@ -228,8 +249,8 @@ const server = http.createServer(async (req, res) => {
       const candidate = path.join(PUBLIC_DIR, pathname);
       if (pathname !== '/' && await serveStatic(req, res, candidate)) return;
 
-      // SPA-роуты: главная, папка, материал, поиск, приватность → index.html с SSR-метой
-      const isSpaRoute = pathname === '/' || /^\/(m|search|privacy|folder)\/?/.test(pathname) ||
+      // SPA-роуты: главная, папка, материал, поиск, приватность, заметки → index.html с SSR-метой
+      const isSpaRoute = pathname === '/' || /^\/(m|search|privacy|folder|notes)\/?/.test(pathname) ||
         !!get("SELECT id FROM folders WHERE slug = ? AND visibility != 'private' AND deleted_at IS NULL", pathname.split('/')[1] || '');
       if (isSpaRoute) return await serveIndexHtml(req, res, pathname);
     }

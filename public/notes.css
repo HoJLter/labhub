@@ -1,0 +1,487 @@
+/* ============================================================
+   Lab-Hub — раздел заметок (стиль чтения «как в Obsidian»).
+   Использует переменные из styles.css, поэтому светлая/тёмная темы
+   подхватываются автоматически.
+   ============================================================ */
+
+/* ——— Ссылка «Заметки» в боковом меню публичной части ——— */
+.sidebar-notes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px 6px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent-text);
+  font-weight: 600;
+  font-size: 13.5px;
+  text-decoration: none;
+}
+
+.sidebar-notes:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.sidebar-notes svg { flex: none; opacity: .85; }
+
+/* ——— Список заметок ——— */
+.notes-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.notes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.note-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  color: var(--text);
+  transition: transform .12s, box-shadow .12s, border-color .12s;
+}
+
+.note-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
+}
+
+.note-card-title {
+  font-weight: 650;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.note-card-excerpt {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.note-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  font-size: 12px;
+}
+
+.note-card-meta { color: var(--text-3); }
+
+/* ——— Теги ——— */
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-cloud-lg .tag-chip { font-size: 14px; padding: 6px 12px; }
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  font-size: 12px;
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.tag-chip:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+
+.tag-count {
+  font-size: 11px;
+  opacity: .7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ——— Страница заметки: статья + боковая панель ——— */
+.note-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+@media (max-width: 1080px) {
+  .note-layout { grid-template-columns: minmax(0, 1fr); }
+  .note-side { order: -1; }
+}
+
+.note-article {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 28px 32px;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 640px) {
+  .note-article { padding: 18px 16px; }
+}
+
+.note-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: calc(var(--header-h) + 14px);
+}
+
+@media (max-width: 1080px) {
+  .note-side { position: static; }
+}
+
+.note-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+}
+
+.note-panel h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.note-toc { list-style: none; margin: 0; padding: 0; }
+.note-toc li { margin: 0 0 6px; font-size: 13px; line-height: 1.35; }
+.note-toc li.toc-l2 { padding-left: 12px; }
+.note-toc li.toc-l3 { padding-left: 24px; font-size: 12.5px; }
+.note-toc a { color: var(--text-2); text-decoration: none; }
+.note-toc a:hover { color: var(--accent); }
+
+.backlink {
+  display: block;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--border);
+  text-decoration: none;
+  color: var(--text);
+  font-size: 13px;
+}
+.backlink:last-child { border-bottom: 0; }
+.backlink b { display: block; font-weight: 600; }
+.backlink span {
+  display: block;
+  color: var(--text-3);
+  font-size: 12px;
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.backlink.is-missing { color: var(--text-3); font-style: italic; }
+
+/* ——— Граф ——— */
+.graph-wrap {
+  position: relative;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.graph-canvas {
+  display: block;
+  width: 100%;
+  height: min(72vh, 660px);
+  cursor: grab;
+}
+.graph-canvas:active { cursor: grabbing; }
+
+.note-graph-canvas {
+  display: block;
+  width: 100%;
+  height: 190px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.graph-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+}
+
+.graph-bar .btn { backdrop-filter: blur(6px); }
+.graph-bar .btn.active { border-color: var(--accent); color: var(--accent); }
+
+/* ============================================================
+   Типографика markdown: то, что рендерит server/markdown.js
+   ============================================================ */
+.markdown-body {
+  font-size: 15.5px;
+  line-height: 1.72;
+  color: var(--text);
+}
+
+.markdown-body > *:first-child { margin-top: 0; }
+.markdown-body > *:last-child { margin-bottom: 0; }
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 1.7em 0 .6em;
+  line-height: 1.25;
+  font-weight: 650;
+  scroll-margin-top: calc(var(--header-h) + 16px);
+}
+
+.markdown-body h1 { font-size: 1.85em; letter-spacing: -.02em; }
+.markdown-body h2 {
+  font-size: 1.42em;
+  padding-bottom: .3em;
+  border-bottom: 1px solid var(--border);
+}
+.markdown-body h3 { font-size: 1.18em; }
+.markdown-body h4 { font-size: 1.03em; }
+.markdown-body h5, .markdown-body h6 { font-size: .95em; color: var(--text-2); }
+
+.markdown-body p { margin: 0 0 1em; }
+.markdown-body strong { font-weight: 660; }
+.markdown-body mark {
+  background: color-mix(in srgb, var(--warn) 28%, transparent);
+  color: inherit;
+  padding: 0 .2em;
+  border-radius: 3px;
+}
+
+.markdown-body a { color: var(--accent); text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }
+
+.markdown-body ul,
+.markdown-body ol { margin: 0 0 1em; padding-left: 1.5em; }
+.markdown-body li { margin: .25em 0; }
+.markdown-body li > ul,
+.markdown-body li > ol { margin: .25em 0; }
+
+.markdown-body li.task-list-item { list-style: none; margin-left: -1.35em; }
+.markdown-body li.task-list-item input {
+  margin-right: .5em;
+  vertical-align: middle;
+  accent-color: var(--accent);
+}
+
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+.markdown-body blockquote {
+  margin: 0 0 1em;
+  padding: .1em 0 .1em 1em;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-2);
+}
+
+.markdown-body code {
+  font-family: var(--mono);
+  font-size: .88em;
+  background: var(--surface-2);
+  padding: .15em .4em;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+
+.markdown-body pre {
+  margin: 0 0 1em;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.markdown-body pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: .86em;
+}
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin: .4em 0;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.2em;
+  font-size: .94em;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border);
+  padding: 7px 11px;
+  text-align: left;
+}
+
+.markdown-body thead th {
+  background: var(--surface-2);
+  font-weight: 620;
+}
+
+/* ——— Wiki-ссылки ——— */
+.markdown-body .wiki-link {
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  text-decoration: none;
+  border-radius: 2px;
+}
+.markdown-body .wiki-link:hover {
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+.markdown-body .wiki-link.is-missing {
+  color: var(--text-3);
+  border-bottom-style: dashed;
+  border-bottom-color: var(--border-strong);
+  cursor: help;
+}
+.markdown-body .wiki-embed.is-missing {
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: .88em;
+  background: var(--surface-2);
+  padding: .1em .35em;
+  border-radius: 5px;
+  border: 1px dashed var(--border-strong);
+}
+
+/* ——— Теги внутри текста ——— */
+.markdown-body .tag {
+  display: inline;
+  padding: .05em .45em;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: .85em;
+  font-weight: 550;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.markdown-body a.tag:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* ——— Callouts (Obsidian) ——— */
+.markdown-body .callout {
+  margin: 0 0 1.1em;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  border-left: 4px solid var(--info);
+  background: color-mix(in srgb, var(--info) 8%, var(--surface));
+}
+
+.markdown-body .callout-title {
+  font-weight: 640;
+  margin-bottom: .35em;
+  cursor: default;
+}
+
+.markdown-body details.callout > .callout-title { cursor: pointer; }
+
+.markdown-body .callout > *:last-child { margin-bottom: 0; }
+
+.markdown-body .callout-note, .markdown-body .callout-info, .markdown-body .callout-abstract,
+.markdown-body .callout-summary, .markdown-body .callout-tldr, .markdown-body .callout-question,
+.markdown-body .callout-help, .markdown-body .callout-example {
+  border-left-color: var(--info);
+  background: color-mix(in srgb, var(--info) 8%, var(--surface));
+}
+
+.markdown-body .callout-tip, .markdown-body .callout-hint, .markdown-body .callout-success,
+.markdown-body .callout-check, .markdown-body .callout-todo {
+  border-left-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 9%, var(--surface));
+}
+
+.markdown-body .callout-warning, .markdown-body .callout-caution, .markdown-body .callout-attention,
+.markdown-body .callout-question2 {
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+}
+
+.markdown-body .callout-danger, .markdown-body .callout-error, .markdown-body .callout-failure,
+.markdown-body .callout-fail, .markdown-body .callout-bug, .markdown-body .callout-missing {
+  border-left-color: var(--err);
+  background: color-mix(in srgb, var(--err) 9%, var(--surface));
+}
+
+.markdown-body .callout-quote, .markdown-body .callout-cite {
+  border-left-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+/* ——— Сноски ——— */
+.markdown-body .footnote-ref a {
+  text-decoration: none;
+  font-weight: 600;
+  padding: 0 .15em;
+}
+
+.markdown-body .footnotes {
+  margin-top: 2.5em;
+  font-size: .9em;
+  color: var(--text-2);
+}
+.markdown-body .footnotes hr { margin: 0 0 1em; }
+.markdown-body .footnotes ol { padding-left: 1.3em; }
+.markdown-body .footnote-back { text-decoration: none; margin-left: .35em; }
+
+/* ——— Трансклюзия ![[Заметка]] ——— */
+.markdown-body .transclusion {
+  margin: 0 0 1em;
+  padding: 12px 16px;
+  border: 1px dashed var(--border-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.markdown-body .transclusion > *:last-child { margin-bottom: 0; }
+.markdown-body .transclusion h1,
+.markdown-body .transclusion h2 { font-size: 1.15em; border-bottom: 0; margin-top: .6em; }

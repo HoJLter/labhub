@@ -189,6 +189,41 @@ CREATE TABLE IF NOT EXISTS salts (
   salt TEXT NOT NULL
 );
 
+-- ——— Заметки (раздел «как в Obsidian») ———
+-- Источник истины — .md-файлы в data/vault, эти таблицы лишь производный индекс:
+-- их можно в любой момент перестроить из файлов (см. reindexAll в server/vault.js).
+CREATE TABLE IF NOT EXISTS notes (
+  path TEXT PRIMARY KEY,                       -- путь без расширения, '/'-разделители
+  slug TEXT UNIQUE NOT NULL,                   -- стабильный URL-идентификатор
+  file TEXT NOT NULL,                          -- путь файла относительно vault, с расширением
+  title TEXT NOT NULL DEFAULT '',
+  aliases TEXT NOT NULL DEFAULT '[]',          -- JSON-массив (frontmatter aliases)
+  frontmatter TEXT NOT NULL DEFAULT '{}',      -- JSON всего frontmatter
+  excerpt TEXT NOT NULL DEFAULT '',
+  word_count INTEGER NOT NULL DEFAULT 0,
+  size INTEGER NOT NULL DEFAULT 0,
+  mtime INTEGER NOT NULL DEFAULT 0,
+  hash TEXT NOT NULL DEFAULT '',               -- sha1 содержимого: детект правок и переименований
+  visibility TEXT NOT NULL DEFAULT 'listed',   -- listed | unlisted | private (из frontmatter)
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS note_links (
+  source_path TEXT NOT NULL,
+  target_raw TEXT NOT NULL,                    -- как написано в тексте: [[вот_так]]
+  target_path TEXT,                            -- разрешённый путь заметки, NULL если ссылка «битая»
+  embed INTEGER NOT NULL DEFAULT 0,
+  heading TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (source_path, target_raw, heading)
+);
+
+CREATE TABLE IF NOT EXISTS note_tags (
+  path TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  PRIMARY KEY (path, tag)
+);
+
 CREATE INDEX IF NOT EXISTS idx_materials_folder   ON materials(folder_id, status);
 CREATE INDEX IF NOT EXISTS idx_materials_pub      ON materials(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_materials_checksum ON materials(checksum);
@@ -197,6 +232,9 @@ CREATE INDEX IF NOT EXISTS idx_events_ts          ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_visitor     ON events(visitor_id);
 CREATE INDEX IF NOT EXISTS idx_folders_parent     ON folders(parent_id);
 CREATE INDEX IF NOT EXISTS idx_search_created     ON search_queries(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_note_links_target  ON note_links(target_path);
+CREATE INDEX IF NOT EXISTS idx_note_links_source  ON note_links(source_path);
+CREATE INDEX IF NOT EXISTS idx_note_tags_tag      ON note_tags(tag);
 `);
 
 // ——— Миграции ———

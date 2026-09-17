@@ -214,6 +214,7 @@ export function registerPublicRoutes(router) {
       urls.push(`${base}/`);
       for (const f of all("SELECT slug FROM folders WHERE visibility = 'listed' AND deleted_at IS NULL")) urls.push(`${base}/${f.slug}`);
       for (const m of all("SELECT slug FROM materials WHERE status='published' AND visibility='listed' AND noindex=0")) urls.push(`${base}/m/${m.slug}`);
+      for (const n of all("SELECT slug FROM notes WHERE visibility = 'listed'")) urls.push(`${base}/notes/${n.slug}`);
     }
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(u => `  <url><loc>${u}</loc></url>`).join('\n')}\n</urlset>`;
     res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });

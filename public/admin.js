@@ -1,5 +1,6 @@
 // Админ-панель lab-hub (раздел 8 ТЗ): дашборд, каталог, материалы, загрузка,
 // хранилища, статистика, корзина, журнал, настройки. Плотная табличная вёрстка.
+import { makeNotesSection } from './admin-notes.js';
 
 // ——— Базовые утилиты ———
 const $ = s => document.querySelector(s);
@@ -129,6 +130,10 @@ async function start() {
 }
 
 // ————————————————— ДАШБОРД (8.1) —————————————————
+// Раздел «Заметки» живёт в отдельном модуле: редактор markdown, предпросмотр, граф, вложения.
+const notesSection = makeNotesSection({ el, api, toast, modal, field });
+registerRoute('notes', notesSection);
+
 registerRoute('dashboard', async (c) => {
   const d = await api('/api/admin/dashboard');
   const ov = d.overview;

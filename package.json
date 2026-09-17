@@ -11,7 +11,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js --force",
-    "backup": "node scripts/backup.js"
+    "backup": "node scripts/backup.js",
+    "test": "node test/markdown.test.js && node test/vault.test.js && node test/graph.test.js && node test/e2e.test.js"
   },
   "license": "MIT"
 }

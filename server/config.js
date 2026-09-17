@@ -23,6 +23,8 @@ export const config = {
     converted: path.join(process.env.DATA_DIR || path.join(ROOT, 'data'), 'files', 'converted'),
     posters: path.join(process.env.DATA_DIR || path.join(ROOT, 'data'), 'files', 'posters'),
     cache: process.env.CACHE_DIR || path.join(process.env.DATA_DIR || path.join(ROOT, 'data'), 'cache'),
+    // Vault заметок: обычные .md-файлы, совместимые с Obsidian (см. server/vault.js)
+    vault: process.env.VAULT_DIR || path.join(process.env.DATA_DIR || path.join(ROOT, 'data'), 'vault'),
     backups: process.env.BACKUP_DIR || path.join(process.env.DATA_DIR || path.join(ROOT, 'data'), 'backups'),
   },
 

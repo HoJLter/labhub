@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#5b5bd6">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/notes.css">
 <meta name="lh-accent" content="__ACCENT__">
 <!-- Тема применяется до первой отрисовки (внешний скрипт — CSP запрещает инлайн) -->
 <script src="/theme.js"></script>
@@ -40,6 +41,10 @@
 
 <div class="layout">
   <nav class="sidebar" id="sidebar" aria-label="Каталог">
+    <a class="sidebar-notes" href="/notes" data-link>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
+      Заметки
+    </a>
     <div class="sidebar-title">Каталог</div>
     <input class="tree-filter" id="tree-filter" type="search" placeholder="Фильтр по папкам…" aria-label="Фильтр дерева папок">
     <div class="tree" id="folder-tree"></div>

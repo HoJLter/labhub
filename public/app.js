@@ -209,6 +209,7 @@ window.addEventListener('popstate', route);
 
 async function route() {
   document.body.classList.remove('drawer-open');
+  destroyActiveGraph();   // цикл отрисовки графа не должен переживать уход со страницы
   const view = $('#view');
   const path = location.pathname;
   window.scrollTo(0, 0);
@@ -218,6 +219,7 @@ async function route() {
     else if (path.startsWith('/m/')) { const slug = path.slice(3); Analytics.push({ type: 'pageview', path: '/m/' + slug }); await renderMaterial(view, slug); }
     else if (path.startsWith('/search')) { Analytics.push({ type: 'pageview', path: '/search' }); await renderSearch(view, new URLSearchParams(location.search).get('q') || ''); }
     else if (path === '/privacy') { Analytics.push({ type: 'pageview', path: '/privacy' }); renderPrivacy(view); }
+    else if (path === '/notes' || path.startsWith('/notes/')) { Analytics.push({ type: 'pageview', path }); await renderNotesRoute(view, path); }
     else { Analytics.push({ type: 'pageview', path }); await renderFolder(view, path.slice(1).split('/')[0]); }
   } catch (e) {
     view.innerHTML = '';
@@ -667,6 +669,245 @@ function renderPrivacy(view) {
     <p><b>Сторонние сервисы.</b> Не используются. Ни Google Analytics, ни других внешних трекеров на сайте нет. Видео и документы с внешних источников (YouTube, облачные диски) могут собирать данные по своей политике — это происходит только при открытии таких материалов.</p>
     <p><b>Do Not Track.</b> Если в браузере включён сигнал DNT, события статистики не отправляются.</p>
     <p><b>Удаление данных.</b> Cookie-идентификатор можно удалить в настройках браузера в любой момент. Сырые события хранятся не более 12 месяцев.</p>` }));
+}
+
+// ——— Заметки (раздел «как в Obsidian») ———
+// Публичная часть — только чтение: список, страница заметки с обратными ссылками,
+// глобальный и локальный граф, страницы тегов. Пишутся заметки исключительно в админке.
+let activeGraph = null;
+function destroyActiveGraph() {
+  if (activeGraph) { try { activeGraph.destroy(); } catch { } activeGraph = null; }
+}
+
+function noteGraphTheme() {
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+}
+
+async function renderNotesRoute(view, path) {
+  const parts = path.split('/').filter(Boolean);   // ['notes', ...]
+  const seg = parts[1] || '';
+  if (!seg) return renderNotesIndex(view);
+  if (seg === 'graph') return renderNotesGraph(view);
+  if (seg === 'tags') return renderNotesTags(view);
+  if (seg === 'tag') return renderTagPage(view, parts[2] ? decodeURIComponent(parts[2]) : '');
+  return renderNote(view, seg);
+}
+
+function noteCard(n) {
+  return el('a', { class: 'note-card', href: '/notes/' + encodeURIComponent(n.slug), 'data-link': true },
+    el('div', { class: 'note-card-title' }, n.title),
+    n.excerpt ? el('div', { class: 'note-card-excerpt' }, n.excerpt) : null,
+    el('div', { class: 'note-card-foot' },
+      el('span', { class: 'note-card-meta' }, n.word_count + ' сл. · ' + fmtDate(n.updated_at)),
+      ...(n.tags || []).slice(0, 3).map(t => el('span', { class: 'tag' }, '#' + t))));
+}
+
+async function renderNotesIndex(view) {
+  const data = await api('/api/notes');
+  view.innerHTML = '';
+  view.append(el('div', { class: 'page-head fade-in' },
+    el('h1', { class: 'page-title' }, 'Заметки'),
+    el('p', { class: 'page-sub' }, 'Конспекты, методички и связи между ними. Пишутся в админ-панели, читаются всеми.'),
+    el('div', { class: 'notes-toolbar' },
+      el('a', { class: 'btn btn-primary', href: '/notes/graph', 'data-link': true }, iconSvg('globe'), 'Граф связей'),
+      el('a', { class: 'btn btn-secondary', href: '/notes/tags', 'data-link': true }, 'Теги'))));
+
+  const notes = data.notes || [];
+  if (!notes.length) {
+    view.append(emptyState('Заметок пока нет', 'Первая заметка создаётся в админ-панели, раздел «Заметки». Vault лежит в data/vault и совместим с Obsidian.'));
+    return;
+  }
+
+  const groups = new Map();
+  for (const n of notes) {
+    const dir = n.folder || '';
+    if (!groups.has(dir)) groups.set(dir, []);
+    groups.get(dir).push(n);
+  }
+  for (const [dir, list] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ru'))) {
+    view.append(el('div', { class: 'section-head' },
+      el('h2', {}, dir || 'Корень vault'),
+      el('span', { class: 'count' }, String(list.length))));
+    const grid = el('div', { class: 'notes-grid fade-in' });
+    for (const n of list) grid.append(noteCard(n));
+    view.append(grid);
+  }
+
+  if ((data.tags || []).length) {
+    view.append(el('div', { class: 'section-head' }, el('h2', {}, 'Теги')));
+    const cloud = el('div', { class: 'tag-cloud fade-in' });
+    for (const t of data.tags) {
+      cloud.append(el('a', { class: 'tag-chip', href: '/notes/tag/' + encodeURIComponent(t.tag), 'data-link': true },
+        '#' + t.tag, el('span', { class: 'tag-count' }, String(t.count))));
+    }
+    view.append(cloud);
+  }
+}
+
+async function renderNote(view, slug) {
+  const data = await api('/api/notes/' + encodeURIComponent(slug));
+  const n = data.note;
+  view.innerHTML = '';
+  view.append(el('nav', { class: 'breadcrumbs', 'aria-label': 'Хлебные крошки' },
+    el('a', { href: '/notes', 'data-link': true }, 'Заметки'),
+    el('span', { class: 'sep' }, '/'),
+    el('span', {}, n.title)));
+
+  const layout = el('div', { class: 'note-layout fade-in' });
+  const article = el('article', { class: 'note-article markdown-body' });
+  // html отдан серверным рендерером: HTML из исходника экранирован, опасные URL отброшены
+  article.innerHTML = data.html || '';
+  layout.append(article);
+
+  const side = el('aside', { class: 'note-side' });
+
+  const headings = (data.headings || []).filter(h => h.level <= 3);
+  if (headings.length) {
+    const panel = el('div', { class: 'note-panel' }, el('h3', {}, 'Содержание'));
+    const list = el('ul', { class: 'note-toc' });
+    for (const h of headings) {
+      list.append(el('li', { class: 'toc-l' + h.level }, el('a', { href: '#' + h.id }, h.text)));
+    }
+    panel.append(list);
+    side.append(panel);
+  }
+
+  if ((data.tags || []).length) {
+    const panel = el('div', { class: 'note-panel' }, el('h3', {}, 'Теги'));
+    const cloud = el('div', { class: 'tag-cloud' });
+    for (const t of data.tags) {
+      cloud.append(el('a', { class: 'tag-chip', href: '/notes/tag/' + encodeURIComponent(t), 'data-link': true }, '#' + t));
+    }
+    panel.append(cloud);
+    side.append(panel);
+  }
+
+  const back = data.backlinks || [];
+  if (back.length) {
+    const panel = el('div', { class: 'note-panel' }, el('h3', {}, 'Обратные ссылки · ' + back.length));
+    for (const b of back) {
+      panel.append(el('a', { class: 'backlink', href: '/notes/' + encodeURIComponent(b.slug), 'data-link': true },
+        el('b', {}, b.title), b.excerpt ? el('span', {}, b.excerpt) : null));
+    }
+    side.append(panel);
+  }
+
+  const missing = (data.outgoing || []).filter(l => l.missing);
+  if (missing.length) {
+    const panel = el('div', { class: 'note-panel' }, el('h3', {}, 'Ненайденные ссылки · ' + missing.length));
+    for (const l of missing) panel.append(el('div', { class: 'backlink is-missing' }, l.raw));
+    side.append(panel);
+  }
+
+  const graphPanel = el('div', { class: 'note-panel' }, el('h3', {}, 'Локальный граф'));
+  const canvas = el('canvas', { class: 'note-graph-canvas', 'aria-label': 'Граф связей заметки' });
+  graphPanel.append(canvas);
+  side.append(graphPanel);
+
+  layout.append(side);
+  view.append(layout);
+
+  renderLocalGraph(canvas, slug);
+}
+
+async function renderLocalGraph(canvas, slug) {
+  try {
+    const mod = await import('/notes-graph.js');
+    const data = await api('/api/notes/' + encodeURIComponent(slug) + '/graph?depth=1');
+    activeGraph = mod.createGraph(canvas, {
+      theme: noteGraphTheme(),
+      labels: true,
+      onOpen: path => {
+        const nd = (data.nodes || []).find(x => x.path === path);
+        if (nd && nd.slug) navigate('/notes/' + encodeURIComponent(nd.slug));
+      },
+    });
+    activeGraph.setData(data);
+    activeGraph.fit();
+  } catch (e) {
+    canvas.replaceWith(el('div', { class: 'muted' }, 'Граф недоступен'));
+  }
+}
+
+async function renderNotesGraph(view) {
+  const data = await api('/api/notes/graph');
+  view.innerHTML = '';
+  view.append(el('div', { class: 'page-head fade-in' },
+    el('h1', { class: 'page-title' }, 'Граф связей'),
+    el('p', { class: 'page-sub' }, 'Заметок: ' + data.nodes.length + ', связей: ' + data.edges.length +
+      '. Клик по узлу открывает заметку, перетаскивание сдвигает, колесо мыши масштабирует.'),
+    el('div', { class: 'notes-toolbar' },
+      el('a', { class: 'btn btn-secondary', href: '/notes', 'data-link': true }, iconSvg('back'), 'К списку заметок'))));
+
+  const wrap = el('div', { class: 'graph-wrap fade-in' });
+  const canvas = el('canvas', { class: 'graph-canvas', 'aria-label': 'Граф связей заметок' });
+  wrap.append(canvas);
+
+  let labels = true;
+  const bar = el('div', { class: 'graph-bar' },
+    el('button', {
+      class: 'btn btn-secondary', onclick: () => { if (activeGraph) activeGraph.fit(); },
+    }, 'Вписать'),
+    el('button', {
+      class: 'btn btn-secondary', onclick: e => {
+        labels = !labels;
+        if (activeGraph) activeGraph.setLabels(labels);
+        e.currentTarget.classList.toggle('active', labels);
+      },
+    }, 'Подписи'));
+  wrap.append(bar);
+  view.append(wrap);
+
+  try {
+    const mod = await import('/notes-graph.js');
+    activeGraph = mod.createGraph(canvas, {
+      theme: noteGraphTheme(),
+      labels: true,
+      onWarn: msg => toast(msg),
+      onOpen: path => {
+        const nd = (data.nodes || []).find(x => x.path === path);
+        if (nd && nd.slug) navigate('/notes/' + encodeURIComponent(nd.slug));
+      },
+    });
+    activeGraph.setData(data);
+    activeGraph.fit();
+  } catch (e) {
+    wrap.append(el('div', { class: 'empty' }, 'Не удалось построить граф: ' + e.message));
+  }
+}
+
+async function renderNotesTags(view) {
+  const data = await api('/api/notes/tags');
+  view.innerHTML = '';
+  view.append(el('div', { class: 'page-head fade-in' },
+    el('h1', { class: 'page-title' }, 'Теги заметок'),
+    el('div', { class: 'notes-toolbar' },
+      el('a', { class: 'btn btn-secondary', href: '/notes', 'data-link': true }, iconSvg('back'), 'К списку заметок'))));
+  const tags = data.tags || [];
+  if (!tags.length) { view.append(emptyState('Тегов нет', 'Добавьте #тег в текст заметки или в её frontmatter.')); return; }
+  const cloud = el('div', { class: 'tag-cloud tag-cloud-lg fade-in' });
+  for (const t of tags) {
+    cloud.append(el('a', { class: 'tag-chip', href: '/notes/tag/' + encodeURIComponent(t.tag), 'data-link': true },
+      '#' + t.tag, el('span', { class: 'tag-count' }, String(t.count))));
+  }
+  view.append(cloud);
+}
+
+async function renderTagPage(view, tag) {
+  const data = await api('/api/notes/tag/' + encodeURIComponent(tag));
+  view.innerHTML = '';
+  view.append(el('nav', { class: 'breadcrumbs', 'aria-label': 'Хлебные крошки' },
+    el('a', { href: '/notes', 'data-link': true }, 'Заметки'),
+    el('span', { class: 'sep' }, '/'),
+    el('a', { href: '/notes/tags', 'data-link': true }, 'Теги'),
+    el('span', { class: 'sep' }, '/'),
+    el('span', {}, '#' + tag)));
+  view.append(el('div', { class: 'page-head fade-in' }, el('h1', { class: 'page-title' }, '#' + tag)));
+  const notes = data.notes || [];
+  if (!notes.length) { view.append(emptyState('Нет заметок с этим тегом', 'Возможно, тег удалён из заметок.')); return; }
+  const grid = el('div', { class: 'notes-grid fade-in' });
+  for (const n of notes) grid.append(noteCard(n));
+  view.append(grid);
 }
 
 // ——— Инициализация ———
