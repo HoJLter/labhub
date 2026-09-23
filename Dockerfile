@@ -1,10 +1,11 @@
-# lab-hub — продакшн-образ: Node 22 + LibreOffice (DOCX→PDF) + ffmpeg (постеры видео)
+# lab-hub — продакшн-образ: Node 22 + LibreOffice (DOCX→PDF) + ffmpeg (постеры видео) + git (Obsidian Git sync)
 FROM node:22-bookworm-slim
 
-# Конвертеры из раздела 6 ТЗ — в одном образе (в compose можно вынести в отдельные контейнеры)
+# Конвертеры из раздела 6 ТЗ + git для server/sync.js (pull из Obsidian-хранилища) —
+# в одном образе (в compose можно вынести в отдельные контейнеры)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-writer libreoffice-calc libreoffice-impress \
-    ffmpeg fonts-liberation fonts-dejavu \
+    ffmpeg fonts-liberation fonts-dejavu git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

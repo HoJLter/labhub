@@ -1,0 +1,52 @@
+# Прод-развёртывание lab-hub через GitHub Actions: образы тянутся из GHCR, сборка на сервере не нужна.
+# Используется CI/CD (scripts/ci-deploy-remote.sh). Для ручного деплоя с локальной машины — docker-compose.yml.
+#
+# Обязательные переменные окружения (ставит ci-deploy-remote.sh):
+#   IMAGE        — полный адрес образа, например ghcr.io/user/lab-hub:main
+#   DEPLOY_TOKEN — PAT с read:packages, для docker login ghcr.io (можно без него, если образ публичный)
+#   GHCR_USER    — логин GitHub (нужен вместе с DEPLOY_TOKEN)
+services:
+  app:
+    image: ${IMAGE}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=3000
+      - DATA_DIR=/data
+    volumes:
+      - lab-hub-data:/data
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/site').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+  backup:
+    image: ${IMAGE}
+    restart: unless-stopped
+    command: sh -c "while true; do sleep 86400; node scripts/backup.js; done"
+    env_file: .env
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      - lab-hub-data:/data
+
+volumes:
+  lab-hub-data:
+  caddy-data:
+  caddy-config:

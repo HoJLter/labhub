@@ -1,0 +1,130 @@
+# CD: push в main → тесты → сборка Docker-образа → публикация в GHCR → деплой на VPS по SSH.
+#
+# Обязательные секреты репозитория (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST      — IP или домен сервера
+#   DEPLOY_USER      — SSH-пользователь (обычно root)
+#   DEPLOY_SSH_KEY   — приватный SSH-ключ (содержимое id_ed25519, публичная часть — в authorized_keys сервера)
+# Необязательные:
+#   DEPLOY_PORT      — SSH-порт (по умолчанию 22)
+#   DEPLOY_PATH      — каталог на сервере (по умолчанию /opt/lab-hub)
+#   GHCR_USER        — логин GitHub для docker login (нужен, только если пакет в GHCR приватный)
+#   GHCR_PAT         — PAT с read:packages (в паре с GHCR_USER)
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # ручной запуск из вкладки Actions
+
+# Два деплоя одновременно не катаим; новый ждёт окончания текущего (не отменяет — прод важнее скорости)
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    name: Тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Тесты (markdown, vault, graph, e2e)
+        run: npm test
+
+  build:
+    name: Образ → GHCR
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.img.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Имя образа (GHCR принимает только lowercase)
+        id: img
+        run: echo "name=$(echo '${{ env.REGISTRY }}/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Войти в GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Теги: main (стабильный для compose) + sha-xxxxxxx (для отката и аудита)
+      - name: Метаданные образа
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.img.outputs.name }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+
+      - name: Собрать и опубликовать
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Деплой на VPS
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production   # если настроено — даст кнопку подтверждения и URL в интерфейсе
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Подготовить SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          PORT="${{ secrets.DEPLOY_PORT || 22 }}"
+          ssh-keyscan -p "$PORT" "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "SSH_PORT=$PORT" >> "$GITHUB_ENV"
+
+      - name: Передать compose и скрипт деплоя
+        run: |
+          scp -P "$SSH_PORT" -i ~/.ssh/deploy_key \
+            docker-compose.prod.yml Caddyfile \
+            scripts/ci-deploy-remote.sh .env.example \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/"
+
+      - name: Запустить деплой на сервере
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}:main
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/lab-hub' }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          ssh -p "$SSH_PORT" -i ~/.ssh/deploy_key \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "IMAGE='$IMAGE' DEPLOY_PATH='$DEPLOY_PATH' GHCR_USER='$GHCR_USER' \
+             GHCR_PAT='$GHCR_PAT' COMMIT_SHA='$COMMIT_SHA' \
+             bash /tmp/ci-deploy-remote.sh"
+
+      - name: Проверить сайт снаружи
+        run: |
+          for i in $(seq 1 12); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${{ secrets.DEPLOY_HOST }}/api/site" || true)
+            if [ "$CODE" = "200" ]; then echo "Сайт отвечает 200"; exit 0; fi
+            echo "Попытка $i: код $CODE, ждём 5 с…"; sleep 5
+          done
+          echo "::error::Сайт не ответил 200 после деплоя"
+          exit 1

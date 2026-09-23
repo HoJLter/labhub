@@ -1,0 +1,31 @@
+# CI: тесты на каждый push и pull request.
+# Зависимостей нет (ноль npm-пакетов), поэтому никакой установки — только node + тесты.
+# e2e-тест сам поднимает сервер во временном DATA_DIR (порт 3997) и гасит его.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    name: Тесты (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.5.0', '22']   # минимум из engines + актуальная LTS-ветка
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Проверка синтаксиса серверных модулей
+        run: |
+          find server scripts test -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Тесты (markdown, vault, graph, e2e)
+        run: npm test

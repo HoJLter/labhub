@@ -1,6 +1,6 @@
 // Сквозной тест заметок на живом сервере: поднимает приложение в изолированном временном
-// DATA_DIR (рабочий data/ не трогается) и проверяет публичное чтение, запись из админки
-// и совместимость с Obsidian. Запуск: node test/e2e.test.js
+// DATA_DIR (рабочий data/ не трогается) и проверяет публичное чтение, read-only-режим
+// vault в админке и совместимость с Obsidian. Запуск: node test/e2e.test.js
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -130,34 +130,28 @@ try {
 
   r = await req('/api/admin/notes');
   check('админ видит все заметки', r.json.notes.length === 3, 'видно ' + r.json.notes.length);
-  const labaSlug = r.json.notes.find(n => n.path === 'Лаба 1').slug;
 
-  r = await admin('/api/admin/notes', { path: 'Новая из админки', content: '# Новая из админки\n\nСсылка [[БЖД]] и #тест.\n' }, 'PUT');
-  check('сохранение заметки из админки', r.status === 200, 'код ' + r.status);
-  const newPath = r.json?.path;
-  check('заметка записана файлом в vault', !!newPath && fs.existsSync(path.join(VAULT, newPath + '.md')));
-  r = await req('/api/notes');
-  check('заметка сразу видна публично', r.json.notes.some(n => n.path === newPath));
-
+  // Vault доступен только для чтения из браузера: эндпоинты редактирования удалены
+  r = await admin('/api/admin/notes', { path: 'Новая из админки', content: '# Тест\n' }, 'PUT');
+  check('создание заметки из браузера заблокировано', r.status === 404 || r.status === 405, 'код ' + r.status);
   r = await req('/api/admin/notes/attach', {
     method: 'POST',
     headers: { 'X-File-Name': encodeURIComponent('снимок.png'), 'X-CSRF-Token': CSRF },
     body: fs.readFileSync(path.join(VAULT, 'attachments', 'схема.png')),
   });
-  check('вложение загружено в vault', r.status === 200 && fs.existsSync(path.join(VAULT, r.json.path)));
-
+  check('загрузка вложений из браузера заблокирована', r.status === 404, 'код ' + r.status);
   r = await admin('/api/admin/notes/rename', { path: 'Лаба 1', to: 'Лаба 1 (v2)' });
-  check('переименование на диске', r.status === 200 && fs.existsSync(path.join(VAULT, 'Лаба 1 (v2).md')));
-  r = await req('/api/notes/' + labaSlug);
-  check('slug сохранился после переименования', r.status === 200, 'код ' + r.status);
-
+  check('переименование из браузера заблокировано', r.status === 404, 'код ' + r.status);
   r = await admin('/api/admin/notes/delete', { path: 'Секрет' });
-  check('удаление мягкое, файл уехал в .trash', r.status === 200 && fs.readdirSync(path.join(VAULT, '.trash')).length >= 1);
+  check('удаление из браузера заблокировано', r.status === 404, 'код ' + r.status);
+  check('vault на диске не изменился', fs.existsSync(path.join(VAULT, 'Лаба 1.md')) && fs.existsSync(path.join(VAULT, 'Секрет.md')));
 
-  r = await admin('/api/admin/notes/preview', { path: 'БЖД', content: '# Тест\n\n[[Лаба 1 (v2)]] и #тег\n' });
+  r = await admin('/api/admin/notes/preview', { path: 'БЖД', content: '# Тест\n\n[[Лаба 1]] и #тег\n' });
   check('предпросмотр рендерит markdown', r.status === 200 && r.json.html.includes('wiki-link'), 'код ' + r.status);
   r = await req('/api/admin/notes/suggest?q=' + encodeURIComponent('Лаба'));
   check('автодополнение [[ссылок]] работает', r.status === 200 && r.json.items.length >= 1, 'код ' + r.status);
+  r = await req('/api/admin/notes/download?path=' + encodeURIComponent('БЖД'));
+  check('скачивание .md из админки работает', r.status === 200 && r.text.includes('# БЖД'), 'код ' + r.status);
 
   write('Из Obsidian.md', '# Из Obsidian\n\nНаписано в файле, ссылка на [[БЖД]], тег #обсидиан.\n');
   let found = false;

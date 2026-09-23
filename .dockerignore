@@ -1,0 +1,24 @@
+# В образ не попадают: VCS, данные, тесты, CI и локальный мусор.
+# Dockerfile копирует только package.json, server/, public/, scripts/ —
+# эти исключения просто не дают им раздуть контекст сборки (data/ >10 МБ).
+.git
+.github
+.gitignore
+.gitattributes
+data
+node_modules
+test
+backups-*
+*.log
+.env
+.env.example
+.deploy.json
+README.md
+TZ-lab-hub.md
+Dockerfile
+docker-compose*.yml
+Caddyfile
+deploy.ps1
+deploy.sh
+server-setup.sh
+.DS_Store
