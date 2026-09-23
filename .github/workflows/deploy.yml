@@ -22,6 +22,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:   # ручной запуск из вкладки Actions
+    inputs:
+      force_admin_sync:
+        description: Синхронизировать пароль админа в БД из .env (и напечатать его в логе)
+        type: boolean
+        default: false
 
 # Два деплоя одновременно не катаим; новый ждёт окончания текущего (не отменяет — прод важнее скорости)
 concurrency:
@@ -131,7 +136,7 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script_stop: true
           command_timeout: 10m
-          envs: IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_PAT,COMMIT_SHA,HTTP_PORT
+          envs: IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_PAT,COMMIT_SHA,HTTP_PORT,FORCE_ADMIN_SYNC
           script: |
             # scp-action может положить файлы как с сохранением структуры, так и плоско —
             # ищем каждый файл и кладём в /tmp независимо от раскладки
@@ -153,6 +158,8 @@ jobs:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
           COMMIT_SHA: ${{ github.sha }}
           HTTP_PORT: ${{ secrets.DEPLOY_HTTP_PORT || 80 }}
+          # true только при ручном запуске с отмеченной галкой force_admin_sync
+          FORCE_ADMIN_SYNC: ${{ github.event.inputs.force_admin_sync }}
 
       - name: Проверить сайт снаружи
         env:
