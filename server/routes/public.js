@@ -100,7 +100,7 @@ export function registerPublicRoutes(router) {
     const vis = isAdmin ? '' : `AND m.visibility = 'listed' AND m.status = 'published'`;
     const materials = all(
       `SELECT m.*, (SELECT group_concat(t.name, ', ') FROM material_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.material_id = m.id) AS tags
-       FROM materials m WHERE m.folder_id = ? AND m.status != 'deleted' ${vis} ORDER BY m.published_at DESC`, f.id);
+       FROM materials m WHERE m.folder_id = ? AND m.status != 'deleted' ${vis} ORDER BY m.title COLLATE NOCASE, m.published_at DESC`, f.id);
     const children = all(`SELECT * FROM folders WHERE parent_id = ? AND deleted_at IS NULL AND ${isAdmin ? '1=1' : "visibility != 'private'"} ORDER BY position, title`, f.id);
     sendJson(res, 200, {
       folder: f,

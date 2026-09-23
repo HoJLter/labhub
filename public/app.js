@@ -309,7 +309,9 @@ async function renderFolder(view, slug) {
   const data = await api('/api/folders/' + encodeURIComponent(slug));
   const { folder, breadcrumb, children, materials } = data;
   Analytics.push({ type: 'pageview', path: '/' + slug, folder_id: folder.id });
-  const st = folderUiState[slug] || (folderUiState[slug] = { view: localStorage.getItem('lh-list-view') || 'table', sort: 'date', dir: 'desc', kind: '', tag: '' });
+  // Сортировка по умолчанию — по названию А→Я; пользовательский выбор запоминается в localStorage
+  const [savedSort, savedDir] = (localStorage.getItem('lh-sort') || 'title:asc').split(':');
+  const st = folderUiState[slug] || (folderUiState[slug] = { view: localStorage.getItem('lh-list-view') || 'table', sort: savedSort || 'title', dir: savedDir === 'desc' ? 'desc' : 'asc', kind: '', tag: '' });
 
   view.innerHTML = '';
   view.append(breadcrumbs(breadcrumb));
@@ -339,7 +341,7 @@ async function renderFolder(view, slug) {
   const tagSelect = el('select', { class: 'select', onchange: e => { st.tag = e.target.value; draw(); } },
     el('option', { value: '' }, 'Все теги'),
     ...allTags.map(t => el('option', { value: t, selected: st.tag === t }, t)));
-  const sortSelect = el('select', { class: 'select', onchange: e => { const [s, d] = e.target.value.split(':'); st.sort = s; st.dir = d; draw(); } },
+  const sortSelect = el('select', { class: 'select', onchange: e => { const [s, d] = e.target.value.split(':'); st.sort = s; st.dir = d; localStorage.setItem('lh-sort', `${s}:${d}`); draw(); } },
     ...[['date:desc', 'Сначала новые'], ['date:asc', 'Сначала старые'], ['title:asc', 'По названию А→Я'], ['title:desc', 'По названию Я→А'], ['size:desc', 'По размеру'], ['views:desc', 'По просмотрам']]
       .map(([v, label]) => el('option', { value: v, selected: `${st.sort}:${st.dir}` === v }, label)));
   const viewToggle = el('div', { class: 'view-toggle' },
