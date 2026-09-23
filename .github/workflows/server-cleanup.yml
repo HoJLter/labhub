@@ -1,0 +1,47 @@
+# Одноразовая уборка места на сервере (по согласованию с владельцем):
+#   - удалить бэкап мира Minecraft /srv/mcbackups/world-2026-08-11_13-40-24.tar.gz (2.0 ГБ)
+#   - обрезать журнал systemd до 100 МБ (~350 МБ освободится)
+#   - очистить кэш apt (~196 МБ)
+#   - обнулить разросшийся /var/log/xray/errors.log (149 МБ; сам xray не трогаем —
+#     файл остаётся на месте, truncate безопасен для пишущего процесса)
+name: Уборка сервера
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    name: Освободить место
+    runs-on: ubuntu-latest
+    steps:
+      - name: Уборка по SSH
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          command_timeout: 10m
+          script: |
+            echo "--- ДО ---"
+            df -h / | tail -1
+
+            echo "--- бэкап Minecraft ---"
+            ls -lh /srv/mcbackups/ 2>/dev/null || true
+            rm -f /srv/mcbackups/world-2026-08-11_13-40-24.tar.gz
+            # каталог оставляем — им может пользоваться инструмент синхронизации MC
+
+            echo "--- журнал systemd ---"
+            journalctl --disk-usage || true
+            journalctl --vacuum-size=100M || true
+            journalctl --disk-usage || true
+
+            echo "--- кэш apt ---"
+            apt-get clean
+
+            echo "--- лог ошибок xray (обнуляем, сервис не трогаем) ---"
+            ls -lh /var/log/xray/errors.log 2>/dev/null && truncate -s 0 /var/log/xray/errors.log || true
+
+            echo "--- ПОСЛЕ ---"
+            df -h / | tail -1

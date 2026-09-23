@@ -1,12 +1,15 @@
 # lab-hub — продакшн-образ: Node 22 + LibreOffice (DOCX→PDF) + ffmpeg (постеры видео) + git (Obsidian Git sync)
-FROM node:22-bookworm-slim
+# База Alpine вместо bookworm: то же наполнение, но слои дистрибутива заметно меньше
+# (образ ~1.65 ГБ → существенно компактнее; основное место — LibreOffice/ffmpeg).
+FROM node:22-alpine
 
-# Конвертеры из раздела 6 ТЗ + git для server/sync.js (pull из Obsidian-хранилища) —
-# в одном образе (в compose можно вынести в отдельные контейнеры)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Конвертеры из раздела 6 ТЗ + git для server/sync.js (pull из Obsidian-хранилища).
+# node:sqlite — часть официальных сборок Node (в т.ч. musl-сборки alpine-образа).
+RUN apk add --no-cache \
     libreoffice-writer libreoffice-calc libreoffice-impress \
-    ffmpeg fonts-liberation fonts-dejavu git \
-    && rm -rf /var/lib/apt/lists/*
+    ffmpeg \
+    git \
+    font-liberation ttf-dejavu
 
 WORKDIR /app
 COPY package.json ./
