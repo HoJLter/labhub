@@ -169,7 +169,14 @@ try {
   check('каталог материалов не сломан', r.status === 200);
   r = await req('/admin');
   check('в админке есть раздел «Заметки»', r.status === 200 && r.text.includes('data-nav="notes"'));
-  const errText = fs.readFileSync(errLog, 'utf8').trim();
+  // node:sqlite на Node 22.x ещё экспериментальный и при старте пишет безобидный
+  // ExperimentalWarning (+ подсказку про --trace-warnings). Реальной ошибкой это не
+  // является, на Node 23+ предупреждения нет вовсе — поэтому отфильтровываем его.
+  const errText = fs.readFileSync(errLog, 'utf8')
+    .split('\n')
+    .filter(l => l.trim() && !/ExperimentalWarning/i.test(l) && !/--trace-warnings/i.test(l))
+    .join('\n')
+    .trim();
   check('в stderr сервера нет ошибок', !errText, errText.split('\n').slice(0, 3).join(' | '));
 } catch (e) {
   fails.push('исключение: ' + e.message);
