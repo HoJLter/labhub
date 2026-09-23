@@ -32,13 +32,15 @@ randstr() {  # $1 = алфавит, $2 = длина
 }
 
 if [ ! -f .env ]; then
-  cp /tmp/.env.example .env
+  # Сначала генерируем секреты, и только потом создаём .env: если генерация упадёт,
+  # на диске не останется .env с паролями-заглушками из примера.
   PASS=$(randstr 'a-z0-9' 20)
   SALT=$(randstr 'a-f0-9' 64)
   if [ -z "$PASS" ] || [ -z "$SALT" ]; then
     echo "::error::Не удалось сгенерировать случайные секреты для .env"
     exit 1
   fi
+  cp /tmp/.env.example .env
   sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$PASS|" .env
   sed -i "s|^IP_SALT=.*|IP_SALT=$SALT|" .env
   chmod 600 .env
@@ -46,6 +48,17 @@ if [ ! -f .env ]; then
   echo "  Админ: login=admin"
   echo "  Пароль: $PASS"
   echo "  ОБЯЗАТЕЛЬНО сохраните пароль — он показывается только один раз!"
+elif grep -qE '^ADMIN_PASSWORD=(смените-этот-пароль|)$' .env; then
+  # .env уже есть, но пароль остался заглушкой из .env.example (файл был создан
+  # упавшим прогоном до подстановки) — чиним, иначе админка открывается общеизвестным паролем.
+  # Окончательная смена пароля в БД — шагом sync ниже (админ уже мог создаться с заглушкой).
+  PASS=$(randstr 'a-z0-9' 20)
+  SALT=$(randstr 'a-f0-9' 64)
+  sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$PASS|" .env
+  grep -qE '^IP_SALT=$' .env && sed -i "s|^IP_SALT=.*|IP_SALT=$SALT|" .env
+  chmod 600 .env
+  NEEDS_ADMIN_SYNC=1
+  echo "=== .env исправлен: пароль админа был заглушкой, сгенерирован новый ==="
 fi
 
 # --- docker login в GHCR (если пакет приватный) --------------------
@@ -90,6 +103,27 @@ if ! $COMPOSE up -d; then
   docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Status}}' || true
   exit 1
 fi
+
+# Если пароль в .env был заглушкой — админ в БД мог создаться с ней же (ensureAdminUser
+# срабатывает только при пустой таблице, restart пароль не меняет). Синхронизируем:
+# ставим хеш нового пароля единственному админу.
+if [ "${NEEDS_ADMIN_SYNC:-0}" = "1" ]; then
+  echo "Синхронизация пароля админа в БД с новым значением из .env…"
+  $COMPOSE exec -T app node --input-type=module -e "
+    const { hashPassword } = await import('/app/server/auth.js');
+    const { db } = await import('/app/server/db.js');
+    const { config } = await import('/app/server/config.js');
+    const row = db.prepare('SELECT id, login FROM admin_users LIMIT 1').get();
+    if (!row) { console.log('админа в БД нет — bootstrap создаст его с текущим паролем'); process.exit(0); }
+    db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?').run(hashPassword(config.adminBootstrap.password), row.id);
+    db.prepare('DELETE FROM sessions').run();
+    console.log('пароль админа ' + row.login + ' обновлён, старые сессии сброшены');
+  "
+  echo "  Админ: login=admin"
+  echo "  Пароль: $(grep '^ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+  echo "  ОБЯЗАТЕЛЬНО сохраните пароль — он показывается только один раз!"
+fi
+
 $COMPOSE ps
 
 # --- Журнал деплоя + уборка старых образов -------------------------
