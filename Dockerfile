@@ -1,15 +1,13 @@
-# lab-hub — продакшн-образ: Node 22 + LibreOffice (DOCX→PDF) + ffmpeg (постеры видео) + git (Obsidian Git sync)
-# База Alpine вместо bookworm: то же наполнение, но слои дистрибутива заметно меньше
-# (образ ~1.65 ГБ → существенно компактнее; основное место — LibreOffice/ffmpeg).
+# lab-hub — продакшн-образ: Node 22 + ffmpeg (постеры видео) + git (Obsidian Git sync)
+# Конвертация DOCX→PDF удалена — LibreOffice в образе не нужен (~1.2 ГБ экономии).
+# База Alpine вместо bookworm: то же наполнение, но слои дистрибутива заметно меньше.
 FROM node:22-alpine
 
-# Конвертеры из раздела 6 ТЗ + git для server/sync.js (pull из Obsidian-хранилища).
+# ffmpeg для постеров/длительности видео + git для server/sync.js (pull из Obsidian-хранилища).
 # node:sqlite — часть официальных сборок Node (в т.ч. musl-сборки alpine-образа).
 RUN apk add --no-cache \
-    libreoffice-writer libreoffice-calc libreoffice-impress \
     ffmpeg \
-    git \
-    font-liberation ttf-dejavu
+    git
 
 WORKDIR /app
 COPY package.json ./

@@ -412,7 +412,7 @@ function kindIcon(kind) {
 }
 
 function readButton(m, small = false) {
-  const canRead = m.kind === 'pdf' || (m.kind === 'docx' && m.convert_status === 'ready') || m.kind === 'video' || m.kind === 'image' || m.source_type === 'embed';
+  const canRead = m.kind === 'pdf' || m.kind === 'video' || m.kind === 'image' || m.source_type === 'embed';
   if (!canRead) return null;
   const label = m.kind === 'video' ? 'Смотреть' : m.kind === 'image' ? 'Открыть' : 'Читать онлайн';
   const href = `/view/${m.slug}`;
@@ -465,8 +465,8 @@ async function renderMaterial(view, slug) {
   if (read) actions.append(read);
   if (m.allow_download) {
     actions.append(el('a', { class: 'btn btn-secondary', href: `/api/download/${m.id}`, onclick: () => Analytics.push({ type: 'download', material_id: m.id }) }, iconSvg('download'), 'Скачать'));
-  } else if (m.kind === 'docx' && m.convert_status !== 'ready') {
-    actions.append(el('span', { class: 'muted' }, 'Онлайн-просмотр DOCX пока недоступен — конвертация не выполнена'));
+  } else if (m.kind === 'docx') {
+    actions.append(el('span', { class: 'muted' }, 'Онлайн-просмотр DOCX не поддерживается, а скачивание отключено'));
   }
   actions.append(el('button', {
     class: 'btn btn-ghost', onclick: async () => {
@@ -490,8 +490,8 @@ async function renderMaterial(view, slug) {
     hero.append(el('div', { class: 'mat-preview', style: 'display:grid;place-items:center;padding:40px 20px;color:var(--text-3)' },
       el('div', { style: 'text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px' },
         kindIcon(m.kind),
-        el('div', {}, m.kind === 'docx' && m.convert_status !== 'ready'
-          ? 'DOCX: доступно скачивание (конвертация в PDF выполняется или недоступна)'
+        el('div', {}, m.kind === 'docx'
+          ? 'DOCX: доступно скачивание — онлайн-просмотр не поддерживается'
           : 'Откройте материал в читалке — без скачивания'))));
   }
 

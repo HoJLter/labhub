@@ -9,7 +9,7 @@ import { HttpError, sendJson, str, slugify, rateLimit, serializeCookie, clientIp
 import { config } from '../config.js';
 import { attemptLogin, destroySession, requireAdmin, changePassword, verifyPassword, generateTotpSecret, verifyTotp, totpNow } from '../auth.js';
 import { detectSourceFromUrl, probeUrl, testStorage, presignS3Get, presignS3Put, KIND_BY_EXT, MIME_BY_EXT } from '../sources.js';
-import { processMaterial, convertDocxToPdf, sniffMime, sha256File, pdfPageCount } from '../convert.js';
+import { processMaterial, sniffMime, sha256File, pdfPageCount } from '../convert.js';
 import { invalidateTreeCache, materialPublic } from './public.js';
 import { overview, topMaterials, topFolders, materialStats, searchStats, techStats, exportCsv, deadMaterials, surgeFolders } from '../stats.js';
 import { cacheStats, clearCache } from '../cache.js';
@@ -54,7 +54,6 @@ export function registerAdminRoutes(router) {
     const filesSize = get("SELECT COALESCE(SUM(size),0) AS s FROM materials WHERE source_type='local' AND status != 'deleted'").s;
     const alerts = {
       brokenLinks: all(`SELECT m.id, m.title, m.slug, lh.status, lh.error_msg FROM link_health lh JOIN materials m ON m.id=lh.material_id WHERE lh.status='broken' AND m.status!='deleted' LIMIT 10`),
-      convertErrors: all(`SELECT id, title, slug FROM materials WHERE convert_status='error' AND status!='deleted' LIMIT 10`),
       diskWarning: disk.usedRatio != null && disk.usedRatio > config.diskWarnRatio,
       deadMaterials: deadMaterials(90).slice(0, 10),
       surges: surgeFolders(7),
@@ -272,15 +271,6 @@ export function registerAdminRoutes(router) {
     audit('admin', 'material.restore', 'materials', m.id, { title: m.title });
     invalidateTreeCache();
     sendJson(res, 200, { ok: true });
-  });
-
-  router.post('/api/admin/materials/:id/reconvert', async (req, res) => {
-    requireAdmin(req);
-    const m = get('SELECT * FROM materials WHERE id = ?', +req.params.id);
-    if (!m) throw new HttpError(404, 'Материал не найден');
-    convertDocxToPdf(m.id).catch(() => {});
-    audit('admin', 'material.reconvert', 'materials', m.id, {});
-    sendJson(res, 202, { ok: true, message: 'Конвертация запущена' });
   });
 
   router.get('/api/admin/materials/:id/stats', (req, res) => {

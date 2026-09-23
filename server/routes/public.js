@@ -21,7 +21,6 @@ export function materialPublic(m) {
     mode: (JSON.parse(m.source_config || '{}').mode) || null,
     page_count: m.page_count, duration_sec: m.duration_sec,
     poster: m.poster_path ? `/api/stream/${m.id}?asset=poster` : null,
-    convert_status: m.convert_status,
     allow_download: !!m.allow_download && !!getSettings().allow_download,
     visibility: m.visibility,
     views_count: m.views_count, reads_count: m.reads_count, downloads_count: m.downloads_count,
@@ -126,7 +125,7 @@ export function registerPublicRoutes(router) {
       breadcrumb: folderBreadcrumb(m.folder_id),
       related: related.map(materialPublic),
       streamUrl: `/api/stream/${m.id}`,
-      viewerUrl: (m.kind === 'pdf' || (m.kind === 'docx' && m.convert_status === 'ready')) ? `/view/${m.slug}` : null,
+      viewerUrl: m.kind === 'pdf' ? `/view/${m.slug}` : null,
     });
   });
 
@@ -151,10 +150,8 @@ export function registerPublicRoutes(router) {
       if (!m.poster_path || !fs.existsSync(m.poster_path)) throw new HttpError(404, 'Постер не найден');
       return streamLocalFile(req, res, m.poster_path, { contentTypeHint: 'image/png' });
     }
-    // конвертированный DOCX→PDF для читалки
-    const wantConverted = req.query.v === 'converted';
     const storage = m.storage_id ? get('SELECT * FROM storages WHERE id = ?', m.storage_id) : null;
-    const source = resolveSource(m, storage, { attachment, wantConverted });
+    const source = resolveSource(m, storage, { attachment });
 
     if (source.type === 'redirect') {
       res.writeHead(302, { Location: source.url, 'Cache-Control': 'no-store' });
@@ -166,13 +163,12 @@ export function registerPublicRoutes(router) {
     if (source.type === 'remote') {
       source.materialId = m.id;
       return streamRemote(req, res, source, {
-        contentTypeHint: wantConverted ? 'application/pdf' : m.mime,
+        contentTypeHint: m.mime,
       });
     }
     // local file
-    const contentType = wantConverted ? 'application/pdf' : m.mime;
     return streamLocalFile(req, res, source.path, {
-      contentTypeHint: contentType,
+      contentTypeHint: m.mime,
       attachment,
       fileName: `${m.title}${path.extname(source.path) || ''}`,
     });

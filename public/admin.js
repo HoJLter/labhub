@@ -65,7 +65,6 @@ const STATUS_BADGE = {
   deleted: () => badge('корзина', 'red'),
 };
 const VIS_BADGE = { listed: null, unlisted: () => badge('unlisted', 'amber'), private: () => badge('private', 'purple') };
-const CONV_BADGE = { ready: () => badge('PDF готов', 'green'), converting: () => badge('конвертируется', 'blue'), error: () => badge('ошибка конвертации', 'red'), none: null };
 const HEALTH_BADGE = { ok: () => badge('ok', 'green'), slow: () => badge('slow', 'amber'), broken: () => badge('ссылка сломана', 'red') };
 const KIND_LABEL = { pdf: 'PDF', docx: 'DOC', video: 'Видео', image: 'Картинка', link: 'Ссылка' };
 const SRC_LABEL = { local: 'сервер', s3: 'S3', webdav: 'WebDAV', drive: 'облако', url: 'URL', embed: 'embed' };
@@ -160,7 +159,6 @@ registerRoute('dashboard', async (c) => {
   // Алерты
   const alerts = [];
   if (d.alerts.brokenLinks.length) alerts.push(el('div', { class: 'alert alert-err' }, `⚠ Сломанные внешние ссылки: ${d.alerts.brokenLinks.length}. `, el('a', { href: '#materials', onclick: e => { e.preventDefault(); location.hash = '#materials'; } }, 'Открыть материалы')));
-  if (d.alerts.convertErrors.length) alerts.push(el('div', { class: 'alert alert-warn' }, `Ошибки конвертации DOCX: ${d.alerts.convertErrors.map(m => '«' + m.title + '»').join(', ')}`));
   if (d.alerts.diskWarning) alerts.push(el('div', { class: 'alert alert-err' }, 'Диск заполнен более чем на 85%!'));
   if (d.alerts.surges.length) alerts.push(el('div', { class: 'alert alert-ok' }, '🔥 Резкий рост интереса (возможно, скоро сессия): ' + d.alerts.surges.map(f => f.title).join(', ')));
   if (d.alerts.deadMaterials.length) alerts.push(el('div', { class: 'alert alert-warn' }, `«Мёртвые» материалы (0 просмотров за 90 дней): ${d.alerts.deadMaterials.length}`));
@@ -405,8 +403,7 @@ registerRoute('materials', async (c, qs) => {
         el('td', {},
           STATUS_BADGE[m.status]?.() || m.status, ' ',
           VIS_BADGE[m.visibility]?.() || '', ' ',
-          m.link_status ? HEALTH_BADGE[m.link_status]?.() || '' : '', ' ',
-          CONV_BADGE[m.convert_status]?.() || ''),
+          m.link_status ? HEALTH_BADGE[m.link_status]?.() || '' : ''),
         el('td', { class: 'num' }, m.views_count, ' / ', m.downloads_count),
         el('td', {}, fmtDate(m.published_at)),
         el('td', { class: 'tbl-actions' },
@@ -467,7 +464,6 @@ async function materialForm(m, folders) {
       el('label', { class: 'check' }, el('input', { type: 'checkbox', id: 'mf-dl', checked: !!m.allow_download }), 'Разрешить скачивание'),
       el('label', { class: 'check' }, el('input', { type: 'checkbox', id: 'mf-noindex', checked: !!m.noindex }), 'noindex (скрыть от поисковиков)')));
   const actions = [el('button', { class: 'btn btn-secondary', onclick: () => mo.close() }, 'Отмена')];
-  if (m.kind === 'docx') actions.push(el('button', { class: 'btn btn-ghost', onclick: async () => { try { await api(`/api/admin/materials/${m.id}/reconvert`, { method: 'POST', body: '{}' }); toast('Конвертация запущена'); } catch (e) { toast(e.message, true); } mo.close(); } }, 'Переконвертировать в PDF'));
   actions.push(el('button', {
     class: 'btn btn-primary', onclick: async () => {
       try {

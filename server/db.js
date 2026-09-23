@@ -9,7 +9,6 @@ import { config } from './config.js';
 
 fs.mkdirSync(config.paths.data, { recursive: true });
 fs.mkdirSync(config.paths.files, { recursive: true });
-fs.mkdirSync(config.paths.converted, { recursive: true });
 fs.mkdirSync(config.paths.posters, { recursive: true });
 fs.mkdirSync(config.paths.cache, { recursive: true });
 fs.mkdirSync(config.paths.backups, { recursive: true });

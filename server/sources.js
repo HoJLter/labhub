@@ -165,14 +165,13 @@ export function driveUrl(cfg, download = false) {
 //  { type: 'remote', url, headers, cacheable, cacheKey } — прокси-стрим с Range
 //  { type: 'redirect', url }                            — 302 на источник (presigned)
 //  { type: 'embed', url }                               — iframe на странице материала
-export function resolveSource(material, storage, { attachment = false, wantConverted = false } = {}) {
+export function resolveSource(material, storage, { attachment = false } = {}) {
   const cfg = JSON.parse(material.source_config || '{}');
   const mode = cfg.mode || defaultMode(material);
 
-  // Локальный файл (в т.ч. сконвертированный DOCX→PDF)
+  // Локальный файл
   if (material.source_type === 'local') {
-    let p = material.file_path;
-    if (wantConverted && material.converted_path && material.convert_status === 'ready') p = material.converted_path;
+    const p = material.file_path;
     if (!p || !fs.existsSync(p)) throw new HttpError(404, 'Файл не найден на диске', 'file_missing');
     return { type: 'file', path: p, size: material.size };
   }

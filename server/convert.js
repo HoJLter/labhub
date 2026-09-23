@@ -1,14 +1,14 @@
 // Обработка файлов при публикации (раздел 6 ТЗ):
-// — DOCX → PDF через LibreOffice headless (фон, статусы converting/ready/error);
 // — постер видео через ffmpeg; — число страниц PDF; — длительность видео.
-// Если бинарников нет (вне Docker), статусы честно помечаются, оригиналы доступны для скачивания.
+// Конвертация DOCX→PDF удалена: DOCX доступен только для скачивания.
+// Если ffmpeg нет (вне Docker), статусы честно помечаются, оригиналы доступны для скачивания.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { run, get, now } from './db.js';
+import { run, get } from './db.js';
 
 export async function binaryExists(cmd) {
   return new Promise(resolve => {
@@ -70,42 +70,6 @@ export async function makeVideoPoster(filePath, materialId) {
   });
 }
 
-// ——— DOCX → PDF (LibreOffice headless в отдельном контейнере в проде, раздел 6.1) ———
-export async function convertDocxToPdf(materialId) {
-  const m = get('SELECT * FROM materials WHERE id = ?', materialId);
-  if (!m || !m.file_path || !fs.existsSync(m.file_path)) {
-    run("UPDATE materials SET convert_status = 'error' WHERE id = ?", materialId);
-    return { ok: false, error: 'Оригинал не найден' };
-  }
-  run("UPDATE materials SET convert_status = 'converting', updated_at = ? WHERE id = ?", now(), materialId);
-  const outDir = path.join(config.paths.converted, String(materialId));
-  await fsp.mkdir(outDir, { recursive: true });
-  return new Promise(resolve => {
-    const p = spawn(config.libreoffice, [
-      '--headless', '--norestore', '--convert-to', 'pdf:writer_pdf_Export', '--outdir', outDir, m.file_path,
-    ], { stdio: 'ignore', timeout: 180_000 });
-    let settled = false;
-    const finish = r => { if (!settled) { settled = true; resolve(r); } };
-    p.on('error', async () => {
-      run("UPDATE materials SET convert_status = 'error', updated_at = ? WHERE id = ?", now(), materialId);
-      finish({ ok: false, error: 'LibreOffice недоступен' });
-    });
-    p.on('close', async code => {
-      const base = path.basename(m.file_path, path.extname(m.file_path)) + '.pdf';
-      const out = path.join(outDir, base);
-      if (code === 0 && fs.existsSync(out)) {
-        const pages = await pdfPageCount(out);
-        run("UPDATE materials SET convert_status = 'ready', converted_path = ?, page_count = COALESCE(page_count, ?), updated_at = ? WHERE id = ?",
-          out, pages, now(), materialId);
-        finish({ ok: true, path: out });
-      } else {
-        run("UPDATE materials SET convert_status = 'error', updated_at = ? WHERE id = ?", now(), materialId);
-        finish({ ok: false, error: `LibreOffice exit ${code}` });
-      }
-    });
-  });
-}
-
 // ——— Магические байты: проверка реального типа файла (раздел 7.4) ———
 export function sniffMime(buf, fallbackExt = '') {
   if (buf.length >= 5 && buf.subarray(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
@@ -148,9 +112,6 @@ export async function processMaterial(materialId) {
   if (m.kind === 'pdf' && m.source_type === 'local' && m.file_path) {
     const pages = m.page_count ?? await pdfPageCount(m.file_path);
     if (pages) run('UPDATE materials SET page_count = ? WHERE id = ?', pages, materialId);
-  }
-  if (m.kind === 'docx' && m.source_type === 'local' && ['none', 'error'].includes(m.convert_status)) {
-    convertDocxToPdf(materialId).catch(() => {});
   }
   if (m.kind === 'video' && m.source_type === 'local' && m.file_path) {
     (async () => {

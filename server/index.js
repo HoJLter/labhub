@@ -30,9 +30,9 @@ if (config.seedDemo) {
   try { seed({}); } catch (e) { console.error('[lab-hub] seed error:', e.message); }
 }
 
-// Фоновые задачи: конвертация материалов в статусе processing/converting после рестарта
+// Фоновая обработка материалов после рестарта (постеры/длительность видео, число страниц PDF)
 setTimeout(() => {
-  for (const m of all("SELECT id FROM materials WHERE source_type='local' AND (convert_status='converting' OR (kind='docx' AND convert_status='none')) AND status != 'deleted'")) {
+  for (const m of all("SELECT id FROM materials WHERE source_type='local' AND kind IN ('video','pdf') AND status != 'deleted'")) {
     processMaterial(m.id).catch(() => {});
   }
 }, 3000);
@@ -152,9 +152,9 @@ async function serveViewer(req, res, slug) {
   if (m) {
     boot = {
       id: m.id, slug: m.slug, title: m.title, kind: m.kind, mime: m.mime,
-      convert_status: m.convert_status, allow_download: !!m.allow_download && !!settings.allow_download,
+      allow_download: !!m.allow_download && !!settings.allow_download,
       folder: { title: m.folder_title, slug: m.folder_slug },
-      streamUrl: `/api/stream/${m.id}${m.kind === 'docx' && m.convert_status === 'ready' ? '?v=converted' : ''}`,
+      streamUrl: `/api/stream/${m.id}`,
       downloadUrl: m.allow_download && settings.allow_download ? `/api/download/${m.id}` : null,
       embedUrl: null,
     };
@@ -287,10 +287,8 @@ router.post('/api/invite', (req, res) => {
 });
 
 server.listen(config.port, config.host, async () => {
-  const lo = await binaryExists(config.libreoffice);
   const ff = await binaryExists(config.ffmpeg);
   console.log(`[lab-hub] запущен: ${config.publicUrl}  (admin: /admin, логин ${config.adminBootstrap.login})`);
-  console.log(`[lab-hub] LibreOffice: ${lo ? 'доступен (DOCX→PDF работает)' : 'НЕ найден — DOCX только для скачивания'}`);
   console.log(`[lab-hub] ffmpeg: ${ff ? 'доступен (постеры/длительность видео)' : 'НЕ найден — постеры не генерируются'}`);
 });
 

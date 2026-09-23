@@ -103,14 +103,12 @@ if (boot.kind === 'video' || boot.kind === 'image' || boot.embedUrl) {
   }
 }
 
-// ——— PDF/DOCX-читалка ———
-const isPdfLike = !boot.error && (boot.kind === 'pdf' || (boot.kind === 'docx' && boot.convert_status === 'ready'));
+// ——— PDF-читалка ———
+const isPdfLike = !boot.error && boot.kind === 'pdf';
 
-if (boot.kind === 'docx' && boot.convert_status !== 'ready' && !boot.error) {
-  showError('Онлайн-просмотр DOCX недоступен',
-    boot.convert_status === 'converting'
-      ? 'Идёт конвертация в PDF — обновите страницу через минуту, либо скачайте оригинал.'
-      : 'Конвертация не выполнена (серверу нужен LibreOffice). Скачайте оригинальный файл.');
+if (boot.kind === 'docx' && !boot.error) {
+  showError('Онлайн-просмотр DOCX не поддерживается',
+    'Скачайте оригинальный файл и откройте его в Word или LibreOffice.');
 }
 
 if (isPdfLike) initPdf().catch(e => {
