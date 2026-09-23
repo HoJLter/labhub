@@ -1,0 +1,62 @@
+# Ручная диагностика сервера: заходит по SSH (те же секреты, что у Deploy)
+# и собирает отчёт о диске — что и где занимает место. Только workflow_dispatch,
+# на push не реагирует. Запуск: Actions → Диагностика сервера → Run workflow.
+name: Диагностика сервера
+
+on:
+  workflow_dispatch:
+
+jobs:
+  disk-report:
+    name: Отчёт о диске
+    runs-on: ubuntu-latest
+    steps:
+      - name: Собрать отчёт по SSH
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          command_timeout: 5m
+          script: |
+            echo "===== 1. Диск в целом ====="
+            df -h
+            echo
+            echo "===== 2. Топ каталогов корня (глубина 2) ====="
+            du -xh -d2 / 2>/dev/null | sort -rh | head -45
+            echo
+            echo "===== 3. Docker: сводка ====="
+            docker system df
+            echo
+            echo "===== 4. Docker: образы ====="
+            docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}' | sort -k3 -rh | head -25
+            echo
+            echo "===== 5. Docker: тома ====="
+            for v in $(docker volume ls -q); do
+              MP=$(docker volume inspect -f '{{.Mountpoint}}' "$v" 2>/dev/null) || continue
+              SIZE=$(du -sh "$MP" 2>/dev/null | cut -f1)
+              echo "$v  ->  ${SIZE:-?}  ($MP)"
+            done
+            echo
+            echo "===== 6. Docker: build cache ====="
+            docker builder du 2>/dev/null | tail -n 3 || echo "(нет)"
+            echo
+            echo "===== 7. /opt/lab-hub детально ====="
+            du -sh /opt/lab-hub 2>/dev/null || true
+            du -sh /opt/lab-hub/* /opt/lab-hub/.env 2>/dev/null || true
+            echo
+            echo "===== 8. Что внутри тома lab-hub-data ====="
+            MP=$(docker volume inspect -f '{{.Mountpoint}}' lab-hub_lab-hub-data 2>/dev/null) || true
+            if [ -n "$MP" ]; then du -h -d2 "$MP" 2>/dev/null | sort -rh | head -25; fi
+            echo
+            echo "===== 9. Файлы крупнее 100 МБ ====="
+            find / -xdev -type f -size +100M 2>/dev/null -exec ls -lh {} + | awk '{print $5, $9}' | sort -rh | head -25
+            echo
+            echo "===== 10. Системный журнал ====="
+            journalctl --disk-usage 2>/dev/null || true
+            echo
+            echo "===== 11. /tmp и /var/tmp ====="
+            du -sh /tmp /var/tmp /tmp/lab-hub-deploy 2>/dev/null || true
+            echo "===== ОТЧЁТ ЗАВЕРШЁН ====="
