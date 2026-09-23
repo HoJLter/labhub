@@ -97,19 +97,16 @@ check_port() {
 check_port "$HTTP_PORT"
 
 $COMPOSE pull app
-if ! $COMPOSE up -d; then
-  echo "--- up не удался, диагностика: ---"
-  $COMPOSE ps || true
-  docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Status}}' || true
-  exit 1
-fi
 
 # Если пароль в .env был заглушкой — админ в БД мог создаться с ней же (ensureAdminUser
 # срабатывает только при пустой таблице, restart пароль не меняет). Синхронизируем:
 # ставим хеш нового пароля единственному админу.
+# ВАЖНО: делаем это до запуска app, пока SQLite никто не держит — иначе
+# второй процесс упрётся в "database is locked".
 if [ "${NEEDS_ADMIN_SYNC:-0}" = "1" ]; then
+  $COMPOSE stop app 2>/dev/null || true
   echo "Синхронизация пароля админа в БД с новым значением из .env…"
-  $COMPOSE exec -T app node --input-type=module -e "
+  $COMPOSE run --rm --no-deps app node --input-type=module -e "
     const { hashPassword } = await import('/app/server/auth.js');
     const { db } = await import('/app/server/db.js');
     const { config } = await import('/app/server/config.js');
@@ -122,6 +119,13 @@ if [ "${NEEDS_ADMIN_SYNC:-0}" = "1" ]; then
   echo "  Админ: login=admin"
   echo "  Пароль: $(grep '^ADMIN_PASSWORD=' .env | cut -d= -f2-)"
   echo "  ОБЯЗАТЕЛЬНО сохраните пароль — он показывается только один раз!"
+fi
+
+if ! $COMPOSE up -d; then
+  echo "--- up не удался, диагностика: ---"
+  $COMPOSE ps || true
+  docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Status}}' || true
+  exit 1
 fi
 
 $COMPOSE ps
