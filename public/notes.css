@@ -240,6 +240,132 @@
 .graph-bar .btn { backdrop-filter: blur(6px); }
 .graph-bar .btn.active { border-color: var(--accent); color: var(--accent); }
 
+.graph-settings {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-8px);
+  transition: opacity .2s, transform .2s;
+  z-index: 10;
+}
+
+.graph-settings.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.graph-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.graph-settings-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.graph-settings-header .btn-icon-sm {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  line-height: 1;
+  transition: background .15s, color .15s;
+}
+
+.graph-settings-header .btn-icon-sm:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.graph-settings-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.graph-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: default;
+}
+
+.graph-setting > span:first-child {
+  font-weight: 500;
+}
+
+.graph-setting input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.graph-setting input[type="range"] {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.graph-setting input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+.graph-setting input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.graph-value {
+  display: inline-block;
+  min-width: 40px;
+  text-align: right;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 /* ============================================================
    Типографика markdown: то, что рендерит server/markdown.js
    ============================================================ */

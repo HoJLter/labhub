@@ -10,6 +10,11 @@ const DEFAULTS = {
   labels: true,
   linkDistance: 60,
   charge: -220,
+  centerForce: 0.002,
+  damping: 0.85,
+  nodeSize: 1,          // множитель радиуса узлов
+  labelSize: 11,        // размер шрифта подписей, px
+  labelOpacity: 1,      // прозрачность подписей 0.05..1
   warnAt: 600,
   onOpen: null,
   onHover: null,
@@ -86,12 +91,14 @@ export function simulateStep(state, opts = {}) {
   // 3. Притяжение к центру + затухание + интегрирование
   const cx = width / 2;
   const cy = height / 2;
+  const centerForce = o.centerForce ?? 0.002;
+  const damping = o.damping ?? 0.85;
   for (const nd of nodes) {
     if (nd.fixed) { nd.vx = 0; nd.vy = 0; continue; }
-    nd.vx += (cx - nd.x) * 0.002;
-    nd.vy += (cy - nd.y) * 0.002;
-    nd.vx *= 0.85;
-    nd.vy *= 0.85;
+    nd.vx += (cx - nd.x) * centerForce;
+    nd.vy += (cy - nd.y) * centerForce;
+    nd.vx *= damping;
+    nd.vy *= damping;
     if (!Number.isFinite(nd.x)) nd.x = cx;
     if (!Number.isFinite(nd.y)) nd.y = cy;
     if (!Number.isFinite(nd.vx)) nd.vx = 0;
@@ -206,8 +213,9 @@ export function createGraph(canvas, opts = {}) {
     ctx.globalAlpha = 1;
 
     // Узлы
+    const sizeK = Number.isFinite(o.nodeSize) && o.nodeSize > 0 ? o.nodeSize : 1;
     for (const nd of state.nodes) {
-      const r = radiusOf(nd.degree);
+      const r = radiusOf(nd.degree) * sizeK;
       const isHover = hovered === nd.path;
       const isSel = selected === nd.path;
       const isNeighbour = neighbours.has(nd.path);
@@ -234,27 +242,47 @@ export function createGraph(canvas, opts = {}) {
     }
     ctx.globalAlpha = 1;
 
-    // Подписи
+    // Подписи: аккуратные «пилюли» с настраиваемым размером и прозрачностью
     if (o.labels) {
-      ctx.font = `${11}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+      const fs = Number.isFinite(o.labelSize) && o.labelSize > 0 ? o.labelSize : 11;
+      const lAlpha = Math.min(1, Math.max(0.05, Number.isFinite(o.labelOpacity) ? o.labelOpacity : 1));
+      ctx.font = `500 ${fs}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
       ctx.textBaseline = 'middle';
+      const padX = fs * 0.42, padY = fs * 0.32;
+      const rad = fs * 0.55;
       for (const nd of state.nodes) {
         const isHover = hovered === nd.path;
+        const isSel = selected === nd.path;
         const isNeighbour = neighbours.has(nd.path);
         const important = (nd.degree || 0) >= 3;
         const zoomedIn = view.scale > 1.6;
         if (!isHover && !isNeighbour && !zoomedIn && !(important && view.scale > 0.8)) continue;
-        const r = radiusOf(nd.degree);
+        const r = radiusOf(nd.degree) * sizeK;
         const label = String(nd.title || nd.path || '');
         const text = label.length > 28 ? label.slice(0, 27) + '…' : label;
-        const x = nd.x + r + 4;
+        const x = nd.x + r + fs * 0.45;
         const y = nd.y;
-        ctx.globalAlpha = hovered && !isHover && !isNeighbour ? 0.25 : 1;
+        const dimmed = hovered && !isHover && !isNeighbour;
+        ctx.globalAlpha = lAlpha * (dimmed ? 0.25 : 1);
         const w = ctx.measureText(text).width;
+        const bx = x - padX, by = y - fs / 2 - padY, bw = w + padX * 2, bh = fs + padY * 2;
+        // Подложка-пилюля: скруглённая, слегка прозрачная
         ctx.fillStyle = p.halo;
-        ctx.fillRect(x - 2, y - 7, w + 4, 14);
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(bx, by, bw, bh, rad);
+        } else {
+          ctx.rect(bx, by, bw, bh);
+        }
+        ctx.fill();
+        // Тонкая обводка — текст читается даже на плотном графе
+        if (isHover || isSel) {
+          ctx.strokeStyle = p.edgeHot;
+          ctx.lineWidth = 1 / view.scale;
+          ctx.stroke();
+        }
         ctx.fillStyle = nd.missing ? p.dim : p.text;
-        ctx.fillText(text, x, y);
+        ctx.fillText(text, x, y + fs * 0.06);
       }
       ctx.globalAlpha = 1;
     }
@@ -296,13 +324,14 @@ export function createGraph(canvas, opts = {}) {
 
   function hitTest(sx, sy) {
     const w = toWorld(sx, sy);
+    const sizeK = Number.isFinite(o.nodeSize) && o.nodeSize > 0 ? o.nodeSize : 1;
     let best = null;
     let bestD = Infinity;
     for (const nd of state.nodes) {
       const dx = nd.x - w.x;
       const dy = nd.y - w.y;
       const d = Math.sqrt(dx * dx + dy * dy);
-      const r = radiusOf(nd.degree) + 6 / view.scale;
+      const r = radiusOf(nd.degree) * sizeK + 6 / view.scale;
       if (d <= r && d < bestD) { bestD = d; best = nd; }
     }
     return best;
@@ -470,6 +499,23 @@ export function createGraph(canvas, opts = {}) {
     },
     setLabels(flag) { o.labels = !!flag; needsDraw = true; startLoop(); return controller; },
     setTheme(theme) { o.theme = theme; needsDraw = true; startLoop(); return controller; },
+    updatePhysics(params = {}) {
+      if ('linkDistance' in params) o.linkDistance = params.linkDistance;
+      if ('charge' in params) o.charge = params.charge;
+      if ('centerForce' in params) o.centerForce = params.centerForce;
+      if ('damping' in params) o.damping = params.damping;
+      kick(0.6);
+      return controller;
+    },
+    /** Визуальные параметры (размер узлов/подписей, прозрачность) — без перезапуска физики. */
+    updateVisual(params = {}) {
+      if ('nodeSize' in params) o.nodeSize = Math.min(3, Math.max(0.3, +params.nodeSize || 1));
+      if ('labelSize' in params) o.labelSize = Math.min(24, Math.max(7, +params.labelSize || 11));
+      if ('labelOpacity' in params) o.labelOpacity = Math.min(1, Math.max(0.05, +params.labelOpacity || 1));
+      needsDraw = true;
+      startLoop();
+      return controller;
+    },
     /** Ручной запуск перерисовки (например, после смены темы извне). */
     refresh() { needsDraw = true; startLoop(); return controller; },
     fit() { fit(); return controller; },

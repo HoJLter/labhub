@@ -28,6 +28,7 @@ const ICONS = {
   caret: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
   inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1Z"/></svg>',
   chevronL: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M5.6 5.6l4.2 4.2m4.2 4.2 4.2 4.2M1 12h6m6 0h6M5.6 18.4l4.2-4.2m4.2-4.2 4.2-4.2"/></svg>',
 };
 
 const KIND_ICON = { pdf: 'pdf', docx: 'docx', video: 'video', image: 'image', link: 'link' };
@@ -90,10 +91,14 @@ const Analytics = (() => {
   function flush() {
     timer = null;
     if (!queue.length) return;
-    const batch = JSON.stringify({ events: queue });
+    const pending = [...queue];
     queue = [];
-    if (navigator.sendBeacon && navigator.sendBeacon('/api/events', new Blob([batch], { type: 'application/json' }))) return;
-    fetch('/api/events', { method: 'POST', body: batch, headers: { 'Content-Type': 'application/json' }, keepalive: true }).catch(() => { });
+    const batch = JSON.stringify({ events: pending });
+    if (navigator.sendBeacon && navigator.sendBeacon('/api/events', new Blob([batch], { type: 'application/json' }))) {
+      return;
+    }
+    fetch('/api/events', { method: 'POST', body: batch, headers: { 'Content-Type': 'application/json' }, keepalive: true })
+      .catch(() => { });
   }
   function push(ev) {
     if (navigator.doNotTrack === '1') return; // уважение DNT
@@ -112,20 +117,25 @@ window.addEventListener('pagehide', () => {
 });
 
 // ——— Тема ———
+// theme.js уже применил тему из localStorage в <head>, здесь только обновляем иконки
+function syncThemeIcons() {
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  $('#icon-sun').classList.toggle('hidden', isDark);
+  $('#icon-moon').classList.toggle('hidden', !isDark);
+}
 function applyTheme(theme) {
-  const cur = document.documentElement.dataset.theme;
   let next = theme;
   if (!next) {
-    const saved = localStorage.getItem('lh-theme');
-    next = saved === 'light' || saved === 'dark' ? (saved === cur ? (cur === 'dark' ? 'light' : 'dark') : saved) : (cur === 'dark' ? 'light' : 'dark');
+    const cur = document.documentElement.dataset.theme;
+    next = cur === 'dark' ? 'light' : 'dark';
   }
   document.documentElement.dataset.theme = next;
   localStorage.setItem('lh-theme', next);
-  $('#icon-sun').classList.toggle('hidden', next === 'dark');
-  $('#icon-moon').classList.toggle('hidden', next !== 'dark');
+  syncThemeIcons();
 }
 $('#btn-theme').addEventListener('click', () => applyTheme());
-applyTheme();
+// Синхронизировать иконки с темой, установленной в theme.js
+syncThemeIcons();
 
 // ——— Мобильный drawer ———
 $('#btn-drawer').addEventListener('click', () => document.body.classList.toggle('drawer-open'));
@@ -841,28 +851,140 @@ async function renderNotesGraph(view) {
 
   const wrap = el('div', { class: 'graph-wrap fade-in' });
   const canvas = el('canvas', { class: 'graph-canvas', 'aria-label': 'Граф связей заметок' });
-  wrap.append(canvas);
 
-  let labels = true;
+  // Настройки графа (как в Obsidian): значения по умолчанию + сохранённые в localStorage
+  const GRAPH_DEFAULTS = { labels: true, linkDistance: 60, charge: -220, centerForce: 0.002, damping: 0.85, nodeSize: 1, labelSize: 11, labelOpacity: 1 };
+  let graphSettings = { ...GRAPH_DEFAULTS };
+  try {
+    const saved = JSON.parse(localStorage.getItem('lh-graph-settings') || '{}');
+    for (const k of ['linkDistance', 'charge', 'centerForce', 'damping', 'nodeSize', 'labelSize', 'labelOpacity']) {
+      if (Number.isFinite(+saved[k])) graphSettings[k] = +saved[k];
+    }
+    if (typeof saved.labels === 'boolean') graphSettings.labels = saved.labels;
+  } catch { /* игнорируем повреждённые данные */ }
+  const saveGraphSettings = () => { try { localStorage.setItem('lh-graph-settings', JSON.stringify(graphSettings)); } catch { } };
+
+  // Описание ползунков — единый формат «слайдер + значение»
+  const SLIDERS = [
+    { key: 'linkDistance', label: 'Расстояние между узлами', min: 30, max: 150, step: 1, fmt: v => String(v) },
+    { key: 'charge', label: 'Сила отталкивания', min: -500, max: -50, step: 5, fmt: v => String(Math.abs(v)) },
+    { key: 'centerForce', label: 'Притяжение к центру', min: 0, max: 0.01, step: 0.0005, fmt: v => (v * 1000).toFixed(1) },
+    { key: 'damping', label: 'Затухание', min: 0.5, max: 0.95, step: 0.05, fmt: v => (v * 100).toFixed(0) + '%' },
+    { key: 'nodeSize', label: 'Размер узлов', min: 0.3, max: 3, step: 0.1, fmt: v => v.toFixed(1) + '×' },
+    { key: 'labelSize', label: 'Размер подписей', min: 7, max: 24, step: 1, fmt: v => v + ' px' },
+    { key: 'labelOpacity', label: 'Прозрачность подписей', min: 0.05, max: 1, step: 0.05, fmt: v => (v * 100).toFixed(0) + '%' },
+  ];
+
+  const PHYSICS_KEYS = new Set(['linkDistance', 'charge', 'centerForce', 'damping']);
+  const VISUAL_KEYS = new Set(['nodeSize', 'labelSize', 'labelOpacity']);
+
+  function sliderControl(def) {
+    const val = el('span', { class: 'graph-value' }, def.fmt(graphSettings[def.key]));
+    const input = el('input', {
+      type: 'range',
+      min: String(def.min),
+      max: String(def.max),
+      step: String(def.step),
+      value: String(graphSettings[def.key]),
+      style: 'flex:1',
+      oninput: e => {
+        graphSettings[def.key] = Number(e.target.value);
+        val.textContent = def.fmt(graphSettings[def.key]);
+        if (activeGraph) {
+          if (PHYSICS_KEYS.has(def.key)) activeGraph.updatePhysics({ [def.key]: graphSettings[def.key] });
+          else if (VISUAL_KEYS.has(def.key)) activeGraph.updateVisual({ [def.key]: graphSettings[def.key] });
+        }
+        saveGraphSettings();
+      },
+    });
+    return el('label', { class: 'graph-setting' },
+      el('span', {}, def.label),
+      el('div', { style: 'display:flex;align-items:center;gap:8px' }, input, val));
+  }
+
+  function labelsControl() {
+    return el('label', { class: 'graph-setting' },
+      el('span', {}, 'Подписи узлов'),
+      el('input', {
+        type: 'checkbox',
+        checked: graphSettings.labels,
+        onchange: e => {
+          graphSettings.labels = e.target.checked;
+          if (activeGraph) activeGraph.setLabels(graphSettings.labels);
+          saveGraphSettings();
+        },
+      }));
+  }
+
+  function resetButton() {
+    return el('button', {
+      class: 'btn btn-secondary', style: 'width:100%;margin-top:8px', onclick: () => {
+        graphSettings = { ...GRAPH_DEFAULTS };
+        saveGraphSettings();
+        if (activeGraph) {
+          activeGraph.updatePhysics({
+            linkDistance: graphSettings.linkDistance,
+            charge: graphSettings.charge,
+            centerForce: graphSettings.centerForce,
+            damping: graphSettings.damping,
+          });
+          activeGraph.updateVisual({
+            nodeSize: graphSettings.nodeSize,
+            labelSize: graphSettings.labelSize,
+            labelOpacity: graphSettings.labelOpacity,
+          });
+          activeGraph.setLabels(graphSettings.labels);
+        }
+        // Пересобираем панель с дефолтными значениями
+        settingsPanel.querySelector('.graph-settings-body').replaceWith(settingsBody());
+      },
+    }, 'Сбросить настройки');
+  }
+
+  function settingsBody() {
+    return el('div', { class: 'graph-settings-body' },
+      labelsControl(),
+      ...SLIDERS.map(sliderControl),
+      resetButton());
+  }
+
+  let settingsOpen = false;
+  const settingsPanel = el('div', { class: 'graph-settings' },
+    el('div', { class: 'graph-settings-header' },
+      el('h3', {}, 'Настройки графа'),
+      el('button', {
+        class: 'btn-icon-sm', onclick: () => {
+          settingsOpen = false;
+          settingsPanel.classList.remove('open');
+        },
+      }, '×')),
+    settingsBody());
+
   const bar = el('div', { class: 'graph-bar' },
     el('button', {
       class: 'btn btn-secondary', onclick: () => { if (activeGraph) activeGraph.fit(); },
     }, 'Вписать'),
     el('button', {
-      class: 'btn btn-secondary', onclick: e => {
-        labels = !labels;
-        if (activeGraph) activeGraph.setLabels(labels);
-        e.currentTarget.classList.toggle('active', labels);
+      class: 'btn btn-secondary', onclick: () => {
+        settingsOpen = !settingsOpen;
+        settingsPanel.classList.toggle('open', settingsOpen);
       },
-    }, 'Подписи'));
-  wrap.append(bar);
+    }, iconSvg('settings'), 'Настройки'));
+  wrap.append(canvas, settingsPanel, bar);
   view.append(wrap);
 
   try {
     const mod = await import('/notes-graph.js');
     activeGraph = mod.createGraph(canvas, {
       theme: noteGraphTheme(),
-      labels: true,
+      labels: graphSettings.labels,
+      linkDistance: graphSettings.linkDistance,
+      charge: graphSettings.charge,
+      centerForce: graphSettings.centerForce,
+      damping: graphSettings.damping,
+      nodeSize: graphSettings.nodeSize,
+      labelSize: graphSettings.labelSize,
+      labelOpacity: graphSettings.labelOpacity,
       onWarn: msg => toast(msg),
       onOpen: path => {
         const nd = (data.nodes || []).find(x => x.path === path);
