@@ -14,6 +14,7 @@ import { invalidateTreeCache, materialPublic } from './public.js';
 import { overview, topMaterials, topFolders, materialStats, searchStats, techStats, exportCsv, deadMaterials, surgeFolders } from '../stats.js';
 import { cacheStats, clearCache } from '../cache.js';
 import { runHealthCheckAll, checkMaterialHealth } from '../health.js';
+import { syncVault, getSyncState, updateSyncSettings, testSyncConnection, restartAutoSync } from '../sync.js';
 
 export function registerAdminRoutes(router) {
   // ——— Авторизация ———
@@ -679,5 +680,45 @@ export function registerAdminRoutes(router) {
     clearCache();
     audit('admin', 'cache.clear', 'settings', null, {});
     sendJson(res, 200, { ok: true });
+  });
+
+  // ——— Синхронизация vault с Obsidian Git-репозиторием ———
+  router.get('/api/admin/vault/sync/state', (req, res) => {
+    requireAdmin(req);
+    sendJson(res, 200, getSyncState());
+  });
+
+  router.post('/api/admin/vault/sync/test', async (req, res) => {
+    requireAdmin(req);
+    const { url } = req.jsonBody || {};
+    if (!url) throw new HttpError(400, 'Укажите URL репозитория');
+    const result = await testSyncConnection(String(url));
+    sendJson(res, 200, result);
+  });
+
+  router.post('/api/admin/vault/sync/settings', (req, res) => {
+    requireAdmin(req);
+    const b = req.jsonBody || {};
+    const settings = {
+      enabled: !!b.enabled,
+      url: String(b.url || '').trim(),
+      interval: Math.max(1, Math.min(1440, +(b.interval || 15))),
+      autoSync: !!b.autoSync,
+    };
+    updateSyncSettings(settings);
+    restartAutoSync();
+    audit('admin', 'vault_sync.settings', 'vault', null, settings);
+    sendJson(res, 200, { ok: true, settings });
+  });
+
+  router.post('/api/admin/vault/sync/now', async (req, res) => {
+    requireAdmin(req);
+    try {
+      const result = await syncVault({ force: true });
+      audit('admin', 'vault_sync.manual', 'vault', null, result);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (err) {
+      throw new HttpError(500, err.message);
+    }
   });
 }

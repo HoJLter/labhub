@@ -138,9 +138,13 @@ registerRoute('dashboard', async (c) => {
   const d = await api('/api/admin/dashboard');
   const ov = d.overview;
   const delta = (cur, prev) => {
-    if (!prev) return cur ? { txt: '+∞', cls: 'up' } : { txt: '—', cls: '' };
+    if (prev === 0 || prev === null || prev === undefined) {
+      if (cur === 0 || cur === null || cur === undefined) return { txt: '—', cls: '' };
+      return { txt: 'новые данные', cls: 'up' };
+    }
     const p = Math.round((cur - prev) / prev * 100);
-    return { txt: (p >= 0 ? '+' : '') + p + '% к прошлому периоду', cls: p >= 0 ? 'up' : 'down' };
+    if (!isFinite(p)) return { txt: '—', cls: '' };
+    return { txt: (p >= 0 ? '+' : '') + p + '%', cls: p >= 0 ? 'up' : 'down' };
   };
   const dpv = delta(ov.cur.pv, ov.prev.pv), duv = delta(ov.cur.uv, ov.prev.uv);
 
@@ -771,6 +775,31 @@ registerRoute('settings', async (c) => {
         try { const r = await api('/api/admin/import/catalog', { method: 'POST', body: await f.text() }); toast(`Импортировано: папок ${r.folders}, материалов ${r.materials}`); } catch (err) { toast(err.message, true); }
       } })),
     el('p', { class: 'muted', style: 'font-size:12.5px' }, 'Полный бэкап (БД + файлы): node scripts/backup.js — см. README. В docker-compose настроен nightly-бэкап.')));
+
+  // Синхронизация с Obsidian Git-репозиторием
+  const syncState = await api('/api/admin/vault/sync/state');
+  const syncInputs = {};
+  c.append(el('div', { class: 'panel' }, el('h2', {}, 'Синхронизация с Obsidian Git'),
+    el('p', { class: 'muted', style: 'font-size:12.5px;margin-bottom:12px' }, 'Автоматическая двусторонняя синхронизация vault с Git-репозиторием. При включении Lab-Hub будет периодически получать изменения из репозитория и отправлять локальные изменения обратно.'),
+    el('label', { class: 'check' }, syncInputs.enabled = el('input', { type: 'checkbox', checked: syncState.enabled }), ' Включить синхронизацию'),
+    fld('URL Git-репозитория', syncInputs.url = el('input', { type: 'url', value: syncState.url, placeholder: 'https://github.com/user/vault.git или git@github.com:user/vault.git' }), 'SSH или HTTPS. Для SSH убедитесь, что ключ доступен серверу.'),
+    el('div', { class: 'grid-2' },
+      fld('Интервал автосинхронизации (минуты)', syncInputs.interval = el('input', { type: 'number', value: syncState.interval, min: '1', max: '1440' })),
+      el('div', { class: 'field' }, el('label', { class: 'check', style: 'margin-top:28px' }, syncInputs.autoSync = el('input', { type: 'checkbox', checked: syncState.autoSync }), ' Автоматическая синхронизация по расписанию'))),
+    syncState.lastSync ? el('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, `Последняя синхронизация: ${fmtDate(syncState.lastSync)} — ${syncState.lastStatus === 'success' ? '✓ успешно' : '✗ ошибка: ' + (syncState.lastError || 'неизвестная ошибка')}`) : null,
+    el('div', { class: 'row', style: 'margin-top:12px' },
+      el('button', { class: 'btn btn-secondary', onclick: async () => {
+        if (!syncInputs.url.value.trim()) return toast('Укажите URL репозитория', true);
+        try { const r = await api('/api/admin/vault/sync/test', { method: 'POST', body: JSON.stringify({ url: syncInputs.url.value.trim() }) }); toast(r.ok ? '✓ Репозиторий доступен' : '✗ ' + r.error, !r.ok); } catch (e) { toast(e.message, true); }
+      } }, 'Проверить подключение'),
+      el('button', { class: 'btn btn-primary', onclick: async () => {
+        const body = { enabled: syncInputs.enabled.checked, url: syncInputs.url.value.trim(), interval: +syncInputs.interval.value, autoSync: syncInputs.autoSync.checked };
+        try { await api('/api/admin/vault/sync/settings', { method: 'POST', body: JSON.stringify(body) }); toast('Настройки синхронизации сохранены'); nav(); } catch (e) { toast(e.message, true); }
+      } }, 'Сохранить настройки синхронизации'),
+      el('button', { class: 'btn btn-secondary', onclick: async () => {
+        if (!confirm('Запустить синхронизацию сейчас?')) return;
+        try { const r = await api('/api/admin/vault/sync/now', { method: 'POST', body: '{}' }); toast(r.message || 'Синхронизация завершена'); nav(); } catch (e) { toast(e.message, true); }
+      }, disabled: !syncState.enabled && !syncInputs.enabled.checked }, 'Синхронизировать сейчас'))));
 
   async function saveSettings() {
     const body = {};
