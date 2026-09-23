@@ -680,9 +680,9 @@ export function registerAdminRoutes(router) {
 
   router.post('/api/admin/vault/sync/test', async (req, res) => {
     requireAdmin(req);
-    const { url } = req.jsonBody || {};
+    const { url, token } = req.jsonBody || {};
     if (!url) throw new HttpError(400, 'Укажите URL репозитория');
-    const result = await testSyncConnection(String(url));
+    const result = await testSyncConnection(String(url), token != null ? String(token) : null);
     sendJson(res, 200, result);
   });
 
@@ -695,10 +695,16 @@ export function registerAdminRoutes(router) {
       interval: Math.max(1, Math.min(1440, +(b.interval || 15))),
       autoSync: !!b.autoSync,
     };
-    updateSyncSettings(settings);
+    // token приходит только если админ его ввёл; '' — стереть сохранённый
+    if (typeof b.token === 'string') settings.token = b.token;
+    try {
+      updateSyncSettings(settings);
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
     restartAutoSync();
-    audit('admin', 'vault_sync.settings', 'vault', null, settings);
-    sendJson(res, 200, { ok: true, settings });
+    audit('admin', 'vault_sync.settings', 'vault', null, { ...settings, token: settings.token ? '***' : undefined });
+    sendJson(res, 200, { ok: true, settings: { ...settings, token: undefined, hasToken: !!settings.token || getSyncState().hasToken } });
   });
 
   router.post('/api/admin/vault/sync/now', async (req, res) => {

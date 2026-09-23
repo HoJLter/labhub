@@ -778,7 +778,11 @@ registerRoute('settings', async (c) => {
   c.append(el('div', { class: 'panel' }, el('h2', {}, 'Синхронизация с Obsidian Git'),
     el('p', { class: 'muted', style: 'font-size:12.5px;margin-bottom:12px' }, 'Автоматическая двусторонняя синхронизация vault с Git-репозиторием. При включении Lab-Hub будет периодически получать изменения из репозитория и отправлять локальные изменения обратно.'),
     el('label', { class: 'check' }, syncInputs.enabled = el('input', { type: 'checkbox', checked: syncState.enabled }), ' Включить синхронизацию'),
-    fld('URL Git-репозитория', syncInputs.url = el('input', { type: 'url', value: syncState.url, placeholder: 'https://github.com/user/vault.git или git@github.com:user/vault.git' }), 'SSH или HTTPS. Для SSH убедитесь, что ключ доступен серверу.'),
+    fld('URL Git-репозитория', syncInputs.url = el('input', { type: 'url', value: syncState.url, placeholder: 'https://github.com/user/vault.git или git@github.com:user/vault.git' }), 'HTTPS или SSH. Для приватного HTTPS-репозитория нужен токен (поле ниже).'),
+    fld('Токен доступа (PAT)', syncInputs.token = el('input', { type: 'password', placeholder: syncState.hasToken ? 'сохранён — введите новый, чтобы заменить' : 'github_pat_… или classic-токен со scope repo' }),
+      syncState.hasToken
+        ? 'Токен сохранён на сервере. Для приватного репозитория GitHub: Settings → Developer settings → Personal access tokens. Оставьте поле пустым, чтобы не менять сохранённый.'
+        : 'Для приватного репозитория GitHub: Settings → Developer settings → Personal access tokens (нужны права на чтение репозитория, для отправки — на запись). Для публичного репозитория оставьте пустым.'),
     el('div', { class: 'grid-2' },
       fld('Интервал автосинхронизации (минуты)', syncInputs.interval = el('input', { type: 'number', value: syncState.interval, min: '1', max: '1440' })),
       el('div', { class: 'field' }, el('label', { class: 'check', style: 'margin-top:28px' }, syncInputs.autoSync = el('input', { type: 'checkbox', checked: syncState.autoSync }), ' Автоматическая синхронизация по расписанию'))),
@@ -786,10 +790,14 @@ registerRoute('settings', async (c) => {
     el('div', { class: 'row', style: 'margin-top:12px' },
       el('button', { class: 'btn btn-secondary', onclick: async () => {
         if (!syncInputs.url.value.trim()) return toast('Укажите URL репозитория', true);
-        try { const r = await api('/api/admin/vault/sync/test', { method: 'POST', body: JSON.stringify({ url: syncInputs.url.value.trim() }) }); toast(r.ok ? '✓ Репозиторий доступен' : '✗ ' + r.error, !r.ok); } catch (e) { toast(e.message, true); }
+        const body = { url: syncInputs.url.value.trim() };
+        if (syncInputs.token.value.trim()) body.token = syncInputs.token.value.trim();
+        try { const r = await api('/api/admin/vault/sync/test', { method: 'POST', body: JSON.stringify(body) }); toast(r.ok ? '✓ Репозиторий доступен' : '✗ ' + r.error, !r.ok); } catch (e) { toast(e.message, true); }
       } }, 'Проверить подключение'),
       el('button', { class: 'btn btn-primary', onclick: async () => {
         const body = { enabled: syncInputs.enabled.checked, url: syncInputs.url.value.trim(), interval: +syncInputs.interval.value, autoSync: syncInputs.autoSync.checked };
+        // токен отправляем только если ввели; пустое поле = «не менять сохранённый»
+        if (syncInputs.token.value.trim()) body.token = syncInputs.token.value.trim();
         try { await api('/api/admin/vault/sync/settings', { method: 'POST', body: JSON.stringify(body) }); toast('Настройки синхронизации сохранены'); nav(); } catch (e) { toast(e.message, true); }
       } }, 'Сохранить настройки синхронизации'),
       el('button', { class: 'btn btn-secondary', onclick: async () => {
