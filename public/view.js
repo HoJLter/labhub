@@ -23,10 +23,14 @@ function pushEvent(ev) {
 }
 function flush() {
   if (!queue.length) return;
-  const body = JSON.stringify({ events: queue.splice(0) });
-  if (!navigator.sendBeacon?.('/api/events', new Blob([body], { type: 'application/json' }))) {
-    fetch('/api/events', { method: 'POST', body, headers: { 'Content-Type': 'application/json' }, keepalive: true }).catch(() => {});
+  const pending = [...queue];
+  queue.length = 0;
+  const body = JSON.stringify({ events: pending });
+  if (navigator.sendBeacon?.('/api/events', new Blob([body], { type: 'application/json' }))) {
+    return;
   }
+  fetch('/api/events', { method: 'POST', body, headers: { 'Content-Type': 'application/json' }, keepalive: true })
+    .catch(() => {});
 }
 window.addEventListener('pagehide', flush);
 
@@ -93,7 +97,10 @@ if (boot.kind === 'video' || boot.kind === 'image' || boot.embedUrl) {
     stage.append(img);
   }
   $('#pages').replaceWith(stage);
-  pushEvent({ type: 'reader_open', material_id: boot.id });
+  pushEvent({ type: 'material_view', material_id: boot.id });
+  if (boot.kind === 'video' || boot.embedUrl) {
+    pushEvent({ type: 'reader_open', material_id: boot.id });
+  }
 }
 
 // ——— PDF/DOCX-читалка ———
@@ -112,6 +119,7 @@ if (isPdfLike) initPdf().catch(e => {
 });
 
 async function initPdf() {
+  pushEvent({ type: 'material_view', material_id: boot.id });
   pushEvent({ type: 'reader_open', material_id: boot.id });
   const loadingTask = pdfjsLib.getDocument({
     url: boot.streamUrl,

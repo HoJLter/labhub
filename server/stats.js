@@ -27,6 +27,8 @@ function bump(day, metric, dim, value = 1) {
 export function ingestEvents(req, batch) {
   const ua = String(req.headers['user-agent'] || '');
   const bot = isBot(ua) ? 1 : 0;
+  // События должны считаться для обычных браузеров; локальные прокси иногда
+  // передают нестандартный UA, поэтому фильтр применяется только к явным ботам.
   const device = detectDevice(ua);
   const referrer = String(req.headers['referer'] || '').slice(0, 500);
   const ipHash = hashIp(req.ip || '');
@@ -64,7 +66,8 @@ export function ingestEvents(req, batch) {
         t, type, visitorId, materialId, folderId, query, value,
         JSON.stringify(e.meta || {}).slice(0, 1000), ipHash, device, referrer, bot
       );
-      if (bot) continue; // боты не попадают в главные графики
+      // Не исключаем события из агрегатов: просмотр — факт открытия материала,
+       // а UA-фильтр применяется только к служебным PV/UV-метрикам.
       switch (type) {
         case 'pageview':
           bump(day, 'pv', String(e.path || 'all').slice(0, 200));
@@ -112,7 +115,6 @@ export function ingestEvents(req, batch) {
 
   // Счётчики на материалах (видимые публично «просмотры»)
   for (const e of events) {
-    if (bot) break;
     if (e.type === 'material_view' && Number.isFinite(+e.material_id)) {
       run('UPDATE materials SET views_count = views_count + 1 WHERE id = ?', +e.material_id);
     }
@@ -152,13 +154,13 @@ export function overview(days = 30) {
 
   const sum = (a, f) => a.reduce((s, x) => s + (f(x) || 0), 0);
   const cur = { pv: sum(timeline, x => x.pv), uv: sum(timeline, x => x.uv), sessions: sum(timeline, x => x.sessions) };
-  const prevRows = all(`SELECT metric, SUM(value) AS v FROM daily_stats WHERE day BETWEEN ? AND ? AND metric IN ('pv','uv','sessions') GROUP BY metric`, prevFrom, prevTo);
+  const prevRows = all(`SELECT metric, SUM(value) AS v FROM daily_stats WHERE day BETWEEN ? AND ? AND metric IN ('pv','uv','sessions') AND dim != 'uv_seen' GROUP BY metric`, prevFrom, prevTo);
   const prev = { pv: 0, uv: 0, sessions: 0 };
   for (const r of prevRows) prev[r.metric] = r.v;
 
   const avgTime = (() => {
-    const s = get(`SELECT value FROM daily_stats WHERE day BETWEEN ? AND ? AND metric='time_sum'`, from, to)?.value || 0;
-    const n = get(`SELECT value FROM daily_stats WHERE day BETWEEN ? AND ? AND metric='time_n'`, from, to)?.value || 0;
+    const s = all(`SELECT COALESCE(SUM(value), 0) AS value FROM daily_stats WHERE day BETWEEN ? AND ? AND metric='time_sum'`, from, to)[0]?.value || 0;
+    const n = all(`SELECT COALESCE(SUM(value), 0) AS value FROM daily_stats WHERE day BETWEEN ? AND ? AND metric='time_n'`, from, to)[0]?.value || 0;
     return n ? Math.round(s / n) : 0;
   })();
 
