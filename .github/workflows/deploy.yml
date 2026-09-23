@@ -7,6 +7,8 @@
 # Необязательные:
 #   DEPLOY_PORT      — SSH-порт (по умолчанию 22)
 #   DEPLOY_PATH      — каталог на сервере (по умолчанию /opt/lab-hub)
+#   DEPLOY_HTTP_PORT  — хостовый порт сайта вместо 80 (если 80 занят)
+#   DEPLOY_HTTPS_PORT — хостовый порт вместо 443 (если 443 занят)
 #   GHCR_USER        — логин GitHub для docker login (нужен, только если пакет в GHCR приватный)
 #   GHCR_PAT         — PAT с read:packages (в паре с GHCR_USER)
 #
@@ -127,7 +129,7 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script_stop: true
           command_timeout: 10m
-          envs: IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_PAT,COMMIT_SHA
+          envs: IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_PAT,COMMIT_SHA,HTTP_PORT,HTTPS_PORT
           script: |
             # scp-action может положить файлы как с сохранением структуры, так и плоско —
             # ищем каждый файл и кладём в /tmp независимо от раскладки
@@ -148,13 +150,19 @@ jobs:
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
           COMMIT_SHA: ${{ github.sha }}
+          HTTP_PORT: ${{ secrets.DEPLOY_HTTP_PORT || 80 }}
+          HTTPS_PORT: ${{ secrets.DEPLOY_HTTPS_PORT || 443 }}
 
       - name: Проверить сайт снаружи
+        env:
+          HTTP_PORT: ${{ secrets.DEPLOY_HTTP_PORT || 80 }}
         run: |
+          SUFFIX=""
+          if [ "$HTTP_PORT" != "80" ]; then SUFFIX=":$HTTP_PORT"; fi
           for i in $(seq 1 12); do
-            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${{ secrets.DEPLOY_HOST }}/api/site" || true)
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${{ secrets.DEPLOY_HOST }}$SUFFIX/api/site" || true)
             if [ "$CODE" = "200" ]; then echo "Сайт отвечает 200"; exit 0; fi
             echo "Попытка $i: код $CODE, ждём 5 с…"; sleep 5
           done
-          echo "::error::Сайт не ответил 200 после деплоя"
+          echo "::error::Сайт не ответил 200 после деплоя (http://${{ secrets.DEPLOY_HOST }}$SUFFIX/api/site)"
           exit 1

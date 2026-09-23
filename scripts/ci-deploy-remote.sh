@@ -7,6 +7,8 @@
 # Переменные окружения:
 #   IMAGE        — образ для запуска, напр. ghcr.io/user/lab-hub:main (обязательно)
 #   DEPLOY_PATH  — рабочий каталог (по умолчанию /opt/lab-hub)
+#   HTTP_PORT    — хостовый порт для :80 Caddy (по умолчанию 80)
+#   HTTPS_PORT   — хостовый порт для :443 Caddy (по умолчанию 443)
 #   GHCR_USER    — логин GitHub       } нужны, только если пакет
 #   GHCR_PAT     — PAT с read:packages } в GHCR приватный
 #   COMMIT_SHA   — для журнала деплоя (необязательно)
@@ -55,9 +57,41 @@ fi
 # --- Тянем образ и перезапускаем -----------------------------------
 COMPOSE="docker compose"
 export IMAGE
+export HTTP_PORT="${HTTP_PORT:-80}"
+export HTTPS_PORT="${HTTPS_PORT:-443}"
+
+# Предпроверка хостовых портов: если их занял другой сервис, compose упадёт
+# с невнятным "address already in use" — лучше сказать сразу, кто виноват.
+check_port() {
+  local port="$1"
+  # ss может отсутствовать на минимальных образах — тогда пробуем netstat, иначе пропускаем
+  local who=""
+  if command -v ss >/dev/null 2>&1; then
+    who=$(ss -ltnp "sport = :$port" 2>/dev/null | tail -n +2)
+  elif command -v netstat >/dev/null 2>&1; then
+    who=$(netstat -ltnp 2>/dev/null | grep ":$port ")
+  fi
+  if [ -n "$who" ]; then
+    # наш собственный контейнер caddy на этом порту — не ошибка, compose его перезапустит
+    if echo "$who" | grep -q 'docker-proxy'; then
+      return 0
+    fi
+    echo "::error::Порт $port на сервере занят другим процессом:"
+    echo "$who"
+    echo "Освободите его (systemctl stop <сервис>) либо задайте секреты DEPLOY_HTTP_PORT / DEPLOY_HTTPS_PORT в GitHub Actions — сайт поднимется на других портах."
+    exit 1
+  fi
+}
+check_port "$HTTP_PORT"
+check_port "$HTTPS_PORT"
 
 $COMPOSE pull app
-$COMPOSE up -d
+if ! $COMPOSE up -d; then
+  echo "--- up не удался, диагностика: ---"
+  $COMPOSE ps || true
+  docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Status}}' || true
+  exit 1
+fi
 $COMPOSE ps
 
 # --- Журнал деплоя + уборка старых образов -------------------------
