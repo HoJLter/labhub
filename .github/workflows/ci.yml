@@ -15,7 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['22.5.0', '22']   # минимум из engines + актуальная LTS-ветка
+        # 22.13.0 — минимум из engines: node:sqlite доступен без флага именно с этой версии
+        node: ['22.13.0', '24']
     steps:
       - uses: actions/checkout@v4
 
