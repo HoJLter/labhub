@@ -854,17 +854,19 @@ async function renderNotesGraph(view) {
   const wrap = el('div', { class: 'graph-wrap fade-in' });
   const canvas = el('canvas', { class: 'graph-canvas', 'aria-label': 'Граф связей заметок' });
 
-  // Настройки графа (как в Obsidian): значения по умолчанию + сохранённые в localStorage
-  const GRAPH_DEFAULTS = { labels: true, linkDistance: 60, charge: -220, centerForce: 0.002, damping: 0.85, nodeSize: 1, labelSize: 11, labelOpacity: 1 };
+  // Настройки графа (как в Obsidian): значения по умолчанию + сохранённые в localStorage.
+  // Ключ с версией (-v2): при смене дефолтов старые сохранённые значения не всплывают.
+  const GRAPH_DEFAULTS = { labels: true, linkDistance: 90, charge: -300, centerForce: 0.002, damping: 0.85, nodeSize: 1, labelSize: 9, labelOpacity: 0.7 };
+  const GRAPH_SETTINGS_KEY = 'lh-graph-settings-v2';
   let graphSettings = { ...GRAPH_DEFAULTS };
   try {
-    const saved = JSON.parse(localStorage.getItem('lh-graph-settings') || '{}');
+    const saved = JSON.parse(localStorage.getItem(GRAPH_SETTINGS_KEY) || '{}');
     for (const k of ['linkDistance', 'charge', 'centerForce', 'damping', 'nodeSize', 'labelSize', 'labelOpacity']) {
       if (Number.isFinite(+saved[k])) graphSettings[k] = +saved[k];
     }
     if (typeof saved.labels === 'boolean') graphSettings.labels = saved.labels;
   } catch { /* игнорируем повреждённые данные */ }
-  const saveGraphSettings = () => { try { localStorage.setItem('lh-graph-settings', JSON.stringify(graphSettings)); } catch { } };
+  const saveGraphSettings = () => { try { localStorage.setItem(GRAPH_SETTINGS_KEY, JSON.stringify(graphSettings)); } catch { } };
 
   // Описание ползунков — единый формат «слайдер + значение»
   const SLIDERS = [

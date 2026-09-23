@@ -122,8 +122,8 @@ test('пружины работают: связанные узлы ближе н
   const linked = Math.hypot(byPath.a.x - byPath.b.x, byPath.a.y - byPath.b.y);
   const unlinked = Math.hypot(byPath.c.x - byPath.d.x, byPath.c.y - byPath.d.y);
   assert.ok(linked < unlinked, `связанные (${linked.toFixed(1)}) должны быть ближе несвязанных (${unlinked.toFixed(1)})`);
-  // и держаться около linkDistance
-  assert.ok(Math.abs(linked - 60) < 45, `расстояние по ребру ${linked.toFixed(1)} далеко от 60`);
+  // и держаться около linkDistance (дефолт 90)
+  assert.ok(Math.abs(linked - 90) < 45, `расстояние по ребру ${linked.toFixed(1)} далеко от 90`);
 });
 
 test('fixed-узлы не двигаются', () => {

@@ -8,13 +8,13 @@
 const DEFAULTS = {
   theme: 'dark',
   labels: true,
-  linkDistance: 60,
-  charge: -220,
+  linkDistance: 90,     // просторнее, как в Obsidian: подписи не налезают друг на друга
+  charge: -300,
   centerForce: 0.002,
   damping: 0.85,
   nodeSize: 1,          // множитель радиуса узлов
-  labelSize: 11,        // размер шрифта подписей, px
-  labelOpacity: 1,      // прозрачность подписей 0.05..1
+  labelSize: 9,         // размер шрифта подписей, px
+  labelOpacity: 0.7,    // прозрачность подписей 0.05..1
   warnAt: 600,
   onOpen: null,
   onHover: null,
