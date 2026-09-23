@@ -123,10 +123,23 @@ Settings → Secrets and variables → Actions:
 |---|---|---|
 | `DEPLOY_HOST` | да | IP или домен сервера |
 | `DEPLOY_USER` | да | SSH-пользователь (обычно `root`) |
-| `DEPLOY_SSH_KEY` | да | приватный SSH-ключ целиком (`ssh-keygen -t ed25519`); публичную часть — в `~/.ssh/authorized_keys` сервера |
+| `DEPLOY_SSH_KEY` | да | приватный SSH-ключ целиком (см. ниже) |
 | `DEPLOY_PORT` | нет | SSH-порт, по умолчанию 22 |
 | `DEPLOY_PATH` | нет | каталог на сервере, по умолчанию `/opt/lab-hub` |
 | `GHCR_USER` + `GHCR_PAT` | нет | только если пакет в GHCR **приватный**: логин GitHub и PAT со scope `read:packages` |
+
+**Как сделать ключ** (без пароля — иначе Actions не сможет им войти):
+
+```bash
+ssh-keygen -t ed25519 -f labhub_deploy -N '' -C 'github-actions'
+# публичную часть — на сервер:
+ssh-copy-id -i labhub_deploy.pub root@ВАШ_IP      # или дописать в ~/.ssh/authorized_keys
+# содержимое labhub_deploy (ПРИВАТНОГО, от -----BEGIN до -----END включительно)
+# целиком вставьте в секрет DEPLOY_SSH_KEY
+```
+
+Частая ошибка — вставить `.pub` (публичный) вместо приватного или обрезать последнюю
+строку: workflow проверяет ключ до подключения и пишет понятную ошибку в аннотациях.
 
 Первый деплой сам создаёт на сервере `.env` со случайным паролем админа — он печатается
 один раз в логе workflow (job «Деплой на VPS»), сохраните его.
