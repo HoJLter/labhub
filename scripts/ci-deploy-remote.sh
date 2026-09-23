@@ -8,7 +8,6 @@
 #   IMAGE        — образ для запуска, напр. ghcr.io/user/lab-hub:main (обязательно)
 #   DEPLOY_PATH  — рабочий каталог (по умолчанию /opt/lab-hub)
 #   HTTP_PORT    — хостовый порт для :80 Caddy (по умолчанию 80)
-#   HTTPS_PORT   — хостовый порт для :443 Caddy (по умолчанию 443)
 #   GHCR_USER    — логин GitHub       } нужны, только если пакет
 #   GHCR_PAT     — PAT с read:packages } в GHCR приватный
 #   COMMIT_SHA   — для журнала деплоя (необязательно)
@@ -58,10 +57,10 @@ fi
 COMPOSE="docker compose"
 export IMAGE
 export HTTP_PORT="${HTTP_PORT:-80}"
-export HTTPS_PORT="${HTTPS_PORT:-443}"
 
-# Предпроверка хостовых портов: если их занял другой сервис, compose упадёт
+# Предпроверка хостового порта: если его занял другой сервис, compose упадёт
 # с невнятным "address already in use" — лучше сказать сразу, кто виноват.
+# Проверяется только HTTP-порт: 443 мы не публикуем (на сервере его может держать xray и т.п.).
 check_port() {
   local port="$1"
   # ss может отсутствовать на минимальных образах — тогда пробуем netstat, иначе пропускаем
@@ -78,12 +77,11 @@ check_port() {
     fi
     echo "::error::Порт $port на сервере занят другим процессом:"
     echo "$who"
-    echo "Освободите его (systemctl stop <сервис>) либо задайте секреты DEPLOY_HTTP_PORT / DEPLOY_HTTPS_PORT в GitHub Actions — сайт поднимется на других портах."
+    echo "Освободите его (systemctl stop <сервис>) либо задайте секрет DEPLOY_HTTP_PORT в GitHub Actions — сайт поднимется на другом порту."
     exit 1
   fi
 }
 check_port "$HTTP_PORT"
-check_port "$HTTPS_PORT"
 
 $COMPOSE pull app
 if ! $COMPOSE up -d; then

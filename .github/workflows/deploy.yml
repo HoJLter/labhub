@@ -7,10 +7,12 @@
 # Необязательные:
 #   DEPLOY_PORT      — SSH-порт (по умолчанию 22)
 #   DEPLOY_PATH      — каталог на сервере (по умолчанию /opt/lab-hub)
-#   DEPLOY_HTTP_PORT  — хостовый порт сайта вместо 80 (если 80 занят)
-#   DEPLOY_HTTPS_PORT — хостовый порт вместо 443 (если 443 занят)
+#   DEPLOY_HTTP_PORT — хостовый порт сайта вместо 80 (если 80 занят)
 #   GHCR_USER        — логин GitHub для docker login (нужен, только если пакет в GHCR приватный)
 #   GHCR_PAT         — PAT с read:packages (в паре с GHCR_USER)
+#
+# Сайт публикуется ТОЛЬКО по HTTP (порт 80 или DEPLOY_HTTP_PORT). Порт 443 не
+# занимается — на сервере его может держать другой сервис.
 #
 # На сервере должен быть разрешён вход по паролю: в /etc/ssh/sshd_config —
 #   PasswordAuthentication yes (после правки: systemctl restart ssh)
@@ -129,7 +131,7 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script_stop: true
           command_timeout: 10m
-          envs: IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_PAT,COMMIT_SHA,HTTP_PORT,HTTPS_PORT
+          envs: IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_PAT,COMMIT_SHA,HTTP_PORT
           script: |
             # scp-action может положить файлы как с сохранением структуры, так и плоско —
             # ищем каждый файл и кладём в /tmp независимо от раскладки
@@ -151,7 +153,6 @@ jobs:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
           COMMIT_SHA: ${{ github.sha }}
           HTTP_PORT: ${{ secrets.DEPLOY_HTTP_PORT || 80 }}
-          HTTPS_PORT: ${{ secrets.DEPLOY_HTTPS_PORT || 443 }}
 
       - name: Проверить сайт снаружи
         env:
