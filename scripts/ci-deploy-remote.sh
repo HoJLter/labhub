@@ -83,9 +83,12 @@ COMPOSE="docker compose"
 export IMAGE
 export HTTP_PORT="${HTTP_PORT:-80}"
 
-# Предпроверка хостового порта: если его занял другой сервис, compose упадёт
+# Предпроверка хостового порта: если его занял ДРУГОЙ сервис, compose упадёт
 # с невнятным "address already in use" — лучше сказать сразу, кто виноват.
 # Проверяется только HTTP-порт: 443 мы не публикуем (на сервере его может держать xray и т.п.).
+# docker-proxy на порту — не препятствие: это либо наш собственный caddy, либо
+# чужой Docker-контейнер; в первом случае compose перезапустит его, во втором —
+# ошибка up -d ниже покажет детали.
 check_port() {
   local port="$1"
   # ss может отсутствовать на минимальных образах — тогда пробуем netstat, иначе пропускаем
@@ -93,13 +96,21 @@ check_port() {
   if command -v ss >/dev/null 2>&1; then
     who=$(ss -ltnp "sport = :$port" 2>/dev/null | tail -n +2)
   elif command -v netstat >/dev/null 2>&1; then
-    who=$(netstat -ltnp 2>/dev/null | grep ":$port ")
+    # || true: grep без совпадений вернул бы 1, и set -e убило бы скрипт на присваивании
+    who=$(netstat -ltnp 2>/dev/null | grep ":$port " || true)
   fi
   if [ -n "$who" ]; then
-    # наш собственный контейнер caddy на этом порту — не ошибка, compose его перезапустит
-    if echo "$who" | grep -q 'docker-proxy'; then
-      return 0
-    fi
+    # ВАЖНО: проверяем вхождение через case, а не "echo | grep -q" — при pipefail
+    # ранний выход grep -q убивает echo через SIGPIPE и вся проверка ложно проваливается.
+    case "$who" in
+      *docker-proxy*)
+        # это либо наш собственный caddy, либо чужой Docker-контейнер;
+        # в первом случае compose перезапустит его, во втором — ошибку покажет up -d ниже
+        echo "Порт $port держит docker-proxy (какой-то контейнер) — продолжаем, compose разберётся:"
+        echo "$who"
+        return 0
+        ;;
+    esac
     echo "::error::Порт $port на сервере занят другим процессом:"
     echo "$who"
     echo "Освободите его (systemctl stop <сервис>) либо задайте секрет DEPLOY_HTTP_PORT в GitHub Actions — сайт поднимется на другом порту."
