@@ -135,7 +135,7 @@ jobs:
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script_stop: true
-          command_timeout: 10m
+          command_timeout: 25m
           envs: IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_PAT,COMMIT_SHA,HTTP_PORT,FORCE_ADMIN_SYNC
           script: |
             # scp-action может положить файлы как с сохранением структуры, так и плоско —
