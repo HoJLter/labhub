@@ -76,8 +76,9 @@ tar -xzf /tmp/lab-hub.tgz
 rm /tmp/lab-hub.tgz
 if [ ! -f .env ]; then
   cp .env.example .env
-  PASS=$(tr -dc 'a-z0-9' < /dev/urandom | head -c20)
-  SALT=$(tr -dc 'a-f0-9' < /dev/urandom | head -c64)
+  # dd вместо бесконечного чтения /dev/urandom: tr не получает SIGPIPE (важно под pipefail)
+  PASS=$(tr -dc 'a-z0-9' < <(dd if=/dev/urandom bs=4096 count=64 2>/dev/null) | head -c20 || true)
+  SALT=$(tr -dc 'a-f0-9' < <(dd if=/dev/urandom bs=4096 count=64 2>/dev/null) | head -c64 || true)
   sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$PASS|" .env
   sed -i "s|^IP_SALT=.*|IP_SALT=$SALT|" .env
   [ -n "$PUBURL" ] && sed -i "s|^PUBLIC_URL=.*|PUBLIC_URL=$PUBURL|" .env

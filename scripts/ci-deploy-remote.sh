@@ -24,10 +24,20 @@ cp /tmp/Caddyfile Caddyfile
 cp /tmp/ci-deploy-remote.sh .   # пригодится для ручного перезапуска
 
 # --- .env: создаём один раз, со случайными секретами --------------
+# Генератор случайных строк: читаем /dev/urandom конечными порциями через dd,
+# иначе tr получает SIGPIPE при закрытии head и pipefail роняет скрипт (код 141).
+randstr() {  # $1 = алфавит, $2 = длина
+  tr -dc "$1" < <(dd if=/dev/urandom bs=4096 count=64 2>/dev/null) | head -c "$2" || true
+}
+
 if [ ! -f .env ]; then
   cp /tmp/.env.example .env
-  PASS=$(tr -dc 'a-z0-9' < /dev/urandom | head -c20)
-  SALT=$(tr -dc 'a-f0-9' < /dev/urandom | head -c64)
+  PASS=$(randstr 'a-z0-9' 20)
+  SALT=$(randstr 'a-f0-9' 64)
+  if [ -z "$PASS" ] || [ -z "$SALT" ]; then
+    echo "::error::Не удалось сгенерировать случайные секреты для .env"
+    exit 1
+  fi
   sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$PASS|" .env
   sed -i "s|^IP_SALT=.*|IP_SALT=$SALT|" .env
   chmod 600 .env
