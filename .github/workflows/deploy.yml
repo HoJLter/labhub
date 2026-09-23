@@ -1,14 +1,17 @@
-# CD: push в main → тесты → сборка Docker-образа → публикация в GHCR → деплой на VPS по SSH.
+# CD: push в main → тесты → сборка Docker-образа → публикация в GHCR → деплой на VPS по SSH (пароль).
 #
 # Обязательные секреты репозитория (Settings → Secrets and variables → Actions):
 #   DEPLOY_HOST      — IP или домен сервера
 #   DEPLOY_USER      — SSH-пользователь (обычно root)
-#   DEPLOY_SSH_KEY   — приватный SSH-ключ (содержимое id_ed25519, публичная часть — в authorized_keys сервера)
+#   DEPLOY_PASSWORD  — SSH-пароль этого пользователя
 # Необязательные:
 #   DEPLOY_PORT      — SSH-порт (по умолчанию 22)
 #   DEPLOY_PATH      — каталог на сервере (по умолчанию /opt/lab-hub)
 #   GHCR_USER        — логин GitHub для docker login (нужен, только если пакет в GHCR приватный)
 #   GHCR_PAT         — PAT с read:packages (в паре с GHCR_USER)
+#
+# На сервере должен быть разрешён вход по паролю: в /etc/ssh/sshd_config —
+#   PasswordAuthentication yes (после правки: systemctl restart ssh)
 name: Deploy
 
 on:
@@ -89,74 +92,62 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Подготовить SSH
+      - name: Проверить секреты
         env:
-          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER_LOGIN: ${{ secrets.DEPLOY_USER }}
-          PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+          PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          set -eu
-          if [ -z "${DEPLOY_KEY:-}" ]; then
-            echo "::error::Секрет DEPLOY_SSH_KEY пуст. Добавьте ПОЛНОЕ содержимое приватного ключа (Settings → Secrets and variables → Actions)."
+          MISSING=""
+          [ -z "$HOST" ] && MISSING="$MISSING DEPLOY_HOST"
+          [ -z "$USER_LOGIN" ] && MISSING="$MISSING DEPLOY_USER"
+          [ -z "$PASSWORD" ] && MISSING="$MISSING DEPLOY_PASSWORD"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Не заданы секреты:$MISSING (Settings → Secrets and variables → Actions)"
             exit 1
           fi
-          if [ -z "${HOST:-}" ] || [ -z "${USER_LOGIN:-}" ]; then
-            echo "::error::Не заданы DEPLOY_HOST и/или DEPLOY_USER."
-            exit 1
-          fi
-
-          mkdir -p ~/.ssh
-          # Приводим ключ к LF: при копировании из Windows часто вставляются CRLF,
-          # из-за чего ssh падает с невнятным "error in libcrypto".
-          printf '%s' "$DEPLOY_KEY" | tr -d '\r' > ~/.ssh/deploy_key
-          # Если ключ вставили одной строкой с литеральными \n — разворачиваем их.
-          if [ "$(wc -l < ~/.ssh/deploy_key)" -lt 2 ]; then
-            printf '%b' "$DEPLOY_KEY" | tr -d '\r' > ~/.ssh/deploy_key
-          fi
-          # Финальный перевод строки обязателен для формата PEM/OpenSSH.
-          [ -n "$(tail -c1 ~/.ssh/deploy_key)" ] && printf '\n' >> ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-
-          # Валидация до попытки подключения: даём понятный диагноз вместо libcrypto-ошибки.
-          LINES=$(wc -l < ~/.ssh/deploy_key)
-          head -n1 ~/.ssh/deploy_key | grep -q -- '^-----BEGIN' || {
-            echo "::error::DEPLOY_SSH_KEY не похож на приватный ключ: первая строка не начинается с '-----BEGIN'. Строки в секрете: $LINES. Вставьте содержимое файла id_ed25519 ЦЕЛИКОМ (от -----BEGIN до -----END), а не публичный ключ (.pub)."
-            exit 1
-          }
-          if ! KEYERR=$(ssh-keygen -y -P '' -f ~/.ssh/deploy_key 2>&1 >/dev/null); then
-            case "$KEYERR" in
-              *passphrase*) echo "::error::Приватный ключ защищён паролем. Создайте ключ без пароля: ssh-keygen -t ed25519 -f ~/.ssh/labhub_deploy (на пароль — пустой Enter)." ;;
-              *) echo "::error::Приватный ключ повреждён или обрезан (ssh-keygen: $KEYERR). Строки в секрете: $LINES. Перевставьте файл целиком, без обрезки и лишних пробелов." ;;
-            esac
-            exit 1
-          fi
-          echo "Приватный ключ валиден."
-
-          ssh-keyscan -p "$PORT" "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          grep -c . ~/.ssh/known_hosts > /dev/null || echo "::warning::ssh-keyscan не вернул ключей хоста $HOST:$PORT — проверьте доступность сервера."
-          echo "SSH_PORT=$PORT" >> "$GITHUB_ENV"
+          echo "Секреты на месте: host=$HOST user=$USER_LOGIN"
 
       - name: Передать compose и скрипт деплоя
-        run: |
-          scp -P "$SSH_PORT" -i ~/.ssh/deploy_key \
-            docker-compose.prod.yml Caddyfile \
-            scripts/ci-deploy-remote.sh .env.example \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/"
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: docker-compose.prod.yml,Caddyfile,scripts/ci-deploy-remote.sh,.env.example
+          target: /tmp/lab-hub-deploy
 
       - name: Запустить деплой на сервере
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          command_timeout: 10m
+          envs: IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_PAT,COMMIT_SHA
+          script: |
+            # scp-action может положить файлы как с сохранением структуры, так и плоско —
+            # ищем каждый файл и кладём в /tmp независимо от раскладки
+            D=/tmp/lab-hub-deploy
+            for f in docker-compose.prod.yml Caddyfile .env.example ci-deploy-remote.sh; do
+              SRC="$D/$f"
+              [ -f "$SRC" ] || SRC=$(find "$D" -type f -name "$f" | head -n1)
+              if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then
+                echo "::error::Файл $f не найден в $D — scp не передал файлы"
+                exit 1
+              fi
+              cp "$SRC" "/tmp/$f"
+            done
+            bash /tmp/ci-deploy-remote.sh
         env:
           IMAGE: ${{ needs.build.outputs.image }}:main
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/lab-hub' }}
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
           COMMIT_SHA: ${{ github.sha }}
-        run: |
-          ssh -p "$SSH_PORT" -i ~/.ssh/deploy_key \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "IMAGE='$IMAGE' DEPLOY_PATH='$DEPLOY_PATH' GHCR_USER='$GHCR_USER' \
-             GHCR_PAT='$GHCR_PAT' COMMIT_SHA='$COMMIT_SHA' \
-             bash /tmp/ci-deploy-remote.sh"
 
       - name: Проверить сайт снаружи
         run: |
