@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { get, all, run, tx, now } from './db.js';
+import { get, all, run, tx, now, getSetting, setSetting } from './db.js';
 import { slugify } from './http.js';
 import { parseFrontmatter, extractWikiLinks, extractTags, renderMarkdown, slugifyHeading } from './markdown.js';
 
@@ -21,7 +21,7 @@ export const ATTACH_DIR = 'attachments';
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif', '.bmp']);
 const ASSET_EXT = new Set([...IMAGE_EXT, '.pdf', '.txt', '.csv', '.vtt', '.mp4', '.webm', '.mp3', '.ogg', '.wav']);
 // Слова, которые нельзя занимать slug'ом заметки: это служебные адреса /notes/<...>
-const RESERVED_SLUGS = new Set(['graph', 'tags', 'tag', 'index', 'all', 'new']);
+const RESERVED_SLUGS = new Set(['graph', 'tags', 'tag', 'folder', 'index', 'all', 'new']);
 
 fs.mkdirSync(VAULT_DIR, { recursive: true });
 fs.mkdirSync(TRASH_DIR, { recursive: true });
@@ -530,6 +530,75 @@ export function notesByTag(tag, { isAdmin = false } = {}) {
   return rows.map(publicNote);
 }
 
+// ——— Цвета тегов на графе (как в Obsidian) ———
+//
+// Источник цветов, по приоритету:
+//   1. сохранённая в settings карта graph_tag_colors (её пересоздаёт кнопка в админке);
+//   2. colorGroups из .obsidian/graph.json — если vault синхронизирован из репозитория,
+//      где пользователь уже раскрасил теги в настоящем Obsidian;
+//   3. случайный яркий цвет (HSL: насыщенный, средней светлоты — читается на тёмном и светлом фоне).
+
+/** Случайный цвет тега: равномерный hue, фиксированный диапазон S/L — без тусклых и кислотных. */
+function randomTagColor() {
+  const h = crypto.randomInt(360);
+  const s = 62 + crypto.randomInt(26);   // 62..87%
+  const l = 52 + crypto.randomInt(14);   // 52..65%
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const a = (s / 100) * Math.min(l / 100, 1 - l / 100);
+    const v = l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * v).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/** tag:#имя → цвет из .obsidian/graph.json (репозиторий пользователя), если файл есть. */
+function obsidianTagColors() {
+  try {
+    const p = path.join(VAULT_DIR, '.obsidian', 'graph.json');
+    if (!fs.existsSync(p)) return {};
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const out = {};
+    for (const g of j?.colorGroups || []) {
+      const m = /^tag:#(.+)$/i.exec(String(g?.query || '').trim());
+      const rgb = g?.color?.rgb;
+      if (m && Number.isInteger(rgb)) out[m[1]] = '#' + (rgb & 0xffffff).toString(16).padStart(6, '0');
+    }
+    return out;
+  } catch { return {}; }
+}
+
+function isHex(v) { return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v); }
+
+/**
+ * Актуальная карта «тег → цвет»: новые теги получают цвет (из Obsidian-конфига или случайный),
+ * цвета исчезнувших тегов выпадают. Карта хранится в settings — стабильна между запросами.
+ */
+export function syncTagColors() {
+  const tags = all('SELECT DISTINCT tag FROM note_tags').map(r => r.tag);
+  const saved = getSetting('graph_tag_colors');
+  const colors = (saved && typeof saved === 'object' && !Array.isArray(saved)) ? saved : {};
+  const obs = obsidianTagColors();
+  const next = {};
+  let changed = Object.keys(colors).length !== tags.length;
+  for (const t of tags) {
+    if (isHex(colors[t])) next[t] = colors[t];
+    else if (isHex(obs[t])) { next[t] = obs[t]; changed = true; }
+    else { next[t] = randomTagColor(); changed = true; }
+  }
+  if (changed) setSetting('graph_tag_colors', next);
+  return next;
+}
+
+/** Кнопка «Переделать цвета графа» в админке: полная случайная перекраска всех тегов. */
+export function regenerateTagColors() {
+  const tags = all('SELECT DISTINCT tag FROM note_tags').map(r => r.tag);
+  const colors = {};
+  for (const t of tags) colors[t] = randomTagColor();
+  setSetting('graph_tag_colors', colors);
+  return colors;
+}
+
 // ——— Граф связей ———
 
 /**
@@ -559,18 +628,24 @@ export function graphData({ isAdmin = false, includeMissing = true } = {}) {
     degree.set(targetPath, (degree.get(targetPath) || 0) + 1);
   }
 
-  const nodes = [...byPath.values(), ...missing.values()].map(n => ({
-    path: n.path,
-    slug: n.slug,
-    title: n.title,
-    degree: degree.get(n.path) || 0,
-    missing: !!n.missing,
-    tags: n.missing ? [] : tagsOf(n.path).slice(0, 6),
-  }));
+  const tagColors = syncTagColors();
+  const nodes = [...byPath.values(), ...missing.values()].map(n => {
+    const tags = n.missing ? [] : tagsOf(n.path).slice(0, 6);
+    return {
+      path: n.path,
+      slug: n.slug,
+      title: n.title,
+      degree: degree.get(n.path) || 0,
+      missing: !!n.missing,
+      tags,
+      // цвет узла = цвет первого тега (как «группы» в Obsidian); без тегов — базовый цвет палитры
+      color: tags.length ? (tagColors[tags[0]] || null) : null,
+    };
+  });
   // Дубли рёбер (разные ссылки на одну заметку) на графе не нужны
   const uniq = new Map();
   for (const e of edges) uniq.set(`${e.source}\u0000${e.target}`, e);
-  return { nodes, edges: [...uniq.values()] };
+  return { nodes, edges: [...uniq.values()], tagColors };
 }
 
 /** Локальный граф: заметка и её соседи в пределах depth шагов. */
@@ -601,6 +676,7 @@ export function localGraph(slug, { depth = 1, isAdmin = false } = {}) {
   return {
     nodes: full.nodes.filter(n => keep.has(n.path)),
     edges: full.edges.filter(e => keep.has(e.source) && keep.has(e.target)),
+    tagColors: full.tagColors || {},
   };
 }
 

@@ -17,7 +17,7 @@ import { noteBySlug, startVaultWatcher } from './vault.js';
 import { seed } from './seed.js';
 import { startCacheJanitor } from './cache.js';
 import { startHealthChecker } from './health.js';
-import { startStatsJanitor } from './stats.js';
+import { startStatsJanitor, countMaterialView, countReaderOpen } from './stats.js';
 import { binaryExists } from './convert.js';
 import { processMaterial } from './convert.js';
 
@@ -150,6 +150,12 @@ async function serveViewer(req, res, slug) {
   let boot = { error: 'not_found' };
   const m = get("SELECT m.*, f.title AS folder_title, f.slug AS folder_slug FROM materials m JOIN folders f ON f.id=m.folder_id WHERE m.slug = ? AND m.status='published' AND m.visibility != 'private'", slug);
   if (m) {
+    // Серверная аналитика открытия читалки: просмотр (с дедупликацией 30 мин) + reads_count.
+    // Не зависит от JS-событий клиента — работает при DNT и потере sendBeacon-батча.
+    if (req.method === 'GET') {
+      countMaterialView(req, m.id, m.folder_id, { src: 'reader' });
+      countReaderOpen(req, m.id);
+    }
     boot = {
       id: m.id, slug: m.slug, title: m.title, kind: m.kind, mime: m.mime,
       allow_download: !!m.allow_download && !!settings.allow_download,

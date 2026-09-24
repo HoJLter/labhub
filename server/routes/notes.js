@@ -13,7 +13,7 @@ import {
   VAULT_DIR, absPath, safeRelPath, isAssetPath, assetExists, listAssets,
   readNoteRaw, writeNoteRaw, moveNoteRaw, trashNoteRaw, saveAttachment,
   reindexAll, noteBySlug, noteByPath, allNotes, tagCounts, notesByTag, graphData, localGraph,
-  renderNote, vaultStats, notesIndex, invalidateResolver, renderPreview,
+  renderNote, vaultStats, notesIndex, invalidateResolver, renderPreview, regenerateTagColors,
 } from '../vault.js';
 
 const MAX_NOTE_BYTES = 4 * 1024 * 1024;
@@ -159,6 +159,13 @@ export function registerNoteRoutes(router) {
     invalidateResolver();
     audit('admin', 'note.reindex', 'notes', null, stat);
     sendJson(res, 200, { ok: true, stats: { ...stat, ...vaultStats() } });
+  });
+
+  // «Переделать цвета графа» — случайная перекраска всех тегов
+  router.post('/api/admin/notes/graph-colors', (req, res) => {
+    const colors = regenerateTagColors();
+    audit('admin', 'note.graph_colors', 'notes', null, { tags: Object.keys(colors).length });
+    sendJson(res, 200, { ok: true, colors });
   });
 
   // Автодополнение [[wiki-ссылок]] и поиск по заметкам в редакторе

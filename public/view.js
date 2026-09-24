@@ -89,7 +89,6 @@ if (boot.kind === 'video' || boot.kind === 'image' || boot.embedUrl) {
       const pr = v.duration ? (v.currentTime / v.duration * 100) : 0;
       $('#read-progress').style.width = pr + '%';
     });
-    v.addEventListener('play', () => pushEvent({ type: 'reader_open', material_id: boot.id }), { once: true });
     stage.append(v);
   } else {
     const img = document.createElement('img');
@@ -97,10 +96,9 @@ if (boot.kind === 'video' || boot.kind === 'image' || boot.embedUrl) {
     stage.append(img);
   }
   $('#pages').replaceWith(stage);
-  pushEvent({ type: 'material_view', material_id: boot.id });
-  if (boot.kind === 'video' || boot.embedUrl) {
-    pushEvent({ type: 'reader_open', material_id: boot.id });
-  }
+  // material_view/reader_open считает сервер при выдаче этой страницы (/view/:slug) —
+  // клиентские события оставлены только для того, что сервер увидеть не может
+  // (прогресс видео, страницы, скачивания).
 }
 
 // ——— PDF-читалка ———
@@ -117,8 +115,7 @@ if (isPdfLike) initPdf().catch(e => {
 });
 
 async function initPdf() {
-  pushEvent({ type: 'material_view', material_id: boot.id });
-  pushEvent({ type: 'reader_open', material_id: boot.id });
+  // Просмотр и открытие читалки засчитывает сервер (GET /view/:slug) — независимо от JS и DNT.
   const loadingTask = pdfjsLib.getDocument({
     url: boot.streamUrl,
     rangeChunkSize: 1024 * 512,          // прогрессивная загрузка чанками (Range)
@@ -179,6 +176,10 @@ async function initPdf() {
     applyLayout(true);
   }
 
+  // Авто-масштаб (scale == null) ограничен сверху: на широких мониторах fit-width
+  // давал 300%+ — страница влезала целиком, но читать было невозможно.
+  const MAX_AUTO_SCALE = 1.5;
+
   function computeScale() {
     if (scale != null) return scale;
     const w0 = wraps[0];
@@ -188,7 +189,8 @@ async function initPdf() {
     const perPageW = mode === 'spread' ? availW / 2 : availW;
     const sW = perPageW / w0.baseW;
     const sH = availH / w0.baseH;
-    return fitMode === 'width' ? sW : Math.min(sW, sH);
+    const fit = fitMode === 'width' ? sW : Math.min(sW, sH);
+    return Math.min(fit, MAX_AUTO_SCALE);
   }
 
   function applyLayout(scrollToPage = false) {
@@ -336,12 +338,31 @@ async function initPdf() {
   }, { passive: true });
 
   // ——— Зум/поворот/вписать ———
-  function zoom(factor) {
-    const cur = computeScale();
-    scale = Math.min(5, Math.max(0.25, (scale ?? cur) * factor));
+  // anchor — точка под курсором (clientX/Y); после смены масштаба она остаётся на месте.
+  function setScale(next, anchor = null) {
+    const prev = computeScale();
+    scale = Math.min(5, Math.max(0.25, next));
     fitMode = 'width';
+    const rect = anchor ? viewerEl.getBoundingClientRect() : null;
+    const left0 = viewerEl.scrollLeft, top0 = viewerEl.scrollTop;
     applyLayout();
+    if (anchor && prev > 0) {
+      const k = scale / prev;
+      viewerEl.scrollLeft = (left0 + anchor.x - rect.left) * k - (anchor.x - rect.left);
+      viewerEl.scrollTop = (top0 + anchor.y - rect.top) * k - (anchor.y - rect.top);
+    }
   }
+  function zoom(factor, anchor = null) {
+    setScale(computeScale() * factor, anchor);
+  }
+  // Ctrl+колесо (и ⌘+колесо на macOS, куда трекпад шлёт pinch как ctrl) — зум к курсору,
+  // как в браузере/Obsidian. Отдельный listener c passive:false — существующий scroll не трогаем.
+  viewerEl.addEventListener('wheel', e => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0022));
+    zoom(factor, { x: e.clientX, y: e.clientY });
+  }, { passive: false });
   $('#btn-zoom-in').addEventListener('click', () => zoom(1.2));
   $('#btn-zoom-out').addEventListener('click', () => zoom(1 / 1.2));
   $('#btn-fit').addEventListener('click', () => {

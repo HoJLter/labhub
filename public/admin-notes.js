@@ -319,6 +319,19 @@ export function makeNotesSection(H) {
         el('a', { class: 'btn btn-secondary', href: '/notes/graph', target: '_blank', rel: 'noopener' }, '↗ Граф'),
         el('button', {
           class: 'btn btn-secondary',
+          title: 'Переслучайнить цвета тегов на графе связей',
+          onclick: async e => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try {
+              const r = await api('/api/admin/notes/graph-colors', { method: 'POST', body: '{}' });
+              toast('Цвета графа обновлены: ' + Object.keys(r.colors || {}).length + ' тегов');
+            } catch (err) { toast(err.message, true); }
+            btn.disabled = false;
+          },
+        }, '🎨 Переделать цвета графа'),
+        el('button', {
+          class: 'btn btn-secondary',
           onclick: async e => {
             e.currentTarget.disabled = true;
             try {

@@ -224,7 +224,8 @@ export function createGraph(canvas, opts = {}) {
       ctx.globalAlpha = faded ? 0.22 : 1;
       ctx.beginPath();
       ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = nd.missing ? p.dim : (isHover || isSel ? p.node : p.node);
+      // per-tag цвет узла (nd.color задаёт сервер из карты тегов); битые ссылки всегда dim
+      ctx.fillStyle = nd.missing ? p.dim : (nd.color || p.node);
       ctx.fill();
 
       if (nd.missing) {

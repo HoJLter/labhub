@@ -23,6 +23,69 @@ function bump(day, metric, dim, value = 1) {
   );
 }
 
+// ——— Серверный подсчёт просмотров (не зависит от клиентского JS, DNT и потери батчей) ———
+// Окно дедупликации: повторные открытия того же материала тем же посетителем
+// (включая Range-дозапросы PDF.js и клиента-аналитику по тому же открытию) не удваивают счётчик.
+const VIEW_DEDUPE_MS = 30 * 60 * 1000;
+
+function viewRecentlyCounted(type, visitorId, ipHash, materialId) {
+  if (!materialId) return true;
+  const since = now() - VIEW_DEDUPE_MS;
+  if (visitorId) {
+    const r = get(`SELECT 1 FROM events WHERE type=? AND material_id=? AND ts>=? AND visitor_id=? LIMIT 1`, type, materialId, since, visitorId);
+    if (r) return true;
+  }
+  if (ipHash) {
+    const r = get(`SELECT 1 FROM events WHERE type=? AND material_id=? AND ts>=? AND ip_hash=? LIMIT 1`, type, materialId, since, ipHash);
+    if (r) return true;
+  }
+  return false;
+}
+
+/**
+ * Засчитать просмотр материала по факту запроса (стрим файла или открытие читалки).
+ * Возвращает true, если просмотр засчитан. Боты пропускаются, повтор в пределах 30 минут — тоже.
+ */
+export function countMaterialView(req, materialId, folderId = null, meta = {}) {
+  const id = Number.isFinite(+materialId) ? +materialId : 0;
+  if (!id) return false;
+  if (String(req.headers['dnt'] || '') === '1') return false;   // политика конфиденциальности: DNT уважаем и на сервере
+  const ua = String(req.headers['user-agent'] || '');
+  if (isBot(ua)) return false;
+  const visitorId = /^[\w-]{8,64}$/.test(req.cookies?.['lh_visitor'] || '') ? req.cookies['lh_visitor'] : null;
+  const ipHash = hashIp(req.ip || '');
+  if (viewRecentlyCounted('material_view', visitorId, ipHash, id)) return false;
+  const t = now();
+  run(
+    `INSERT INTO events(ts, type, visitor_id, material_id, folder_id, query, value, meta, ip_hash, device, referrer, bot)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`,
+    t, 'material_view', visitorId, id, Number.isFinite(+folderId) ? +folderId : null, null, null,
+    JSON.stringify({ source: 'server', ...meta }).slice(0, 1000), ipHash, detectDevice(ua),
+    String(req.headers['referer'] || '').slice(0, 500)
+  );
+  bump(dayKey(t), 'material_view', String(id));
+  run('UPDATE materials SET views_count = views_count + 1 WHERE id = ?', id);
+  return true;
+}
+
+/** Открытие читалки (/view/:slug) — «открытий в читалке». Без дедупликации: каждый загруз страницы, как и раньше. */
+export function countReaderOpen(req, materialId) {
+  const id = Number.isFinite(+materialId) ? +materialId : 0;
+  if (!id) return;
+  if (String(req.headers['dnt'] || '') === '1') return;
+  const ua = String(req.headers['user-agent'] || '');
+  if (isBot(ua)) return;
+  const visitorId = /^[\w-]{8,64}$/.test(req.cookies?.['lh_visitor'] || '') ? req.cookies['lh_visitor'] : null;
+  run(
+    `INSERT INTO events(ts, type, visitor_id, material_id, folder_id, query, value, meta, ip_hash, device, referrer, bot)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`,
+    now(), 'reader_open', visitorId, id, null, null, null, '{"source":"server"}',
+    hashIp(req.ip || ''), detectDevice(ua), String(req.headers['referer'] || '').slice(0, 500)
+  );
+  bump(dayKey(now()), 'reader_open', String(id));
+  run('UPDATE materials SET reads_count = reads_count + 1 WHERE id = ?', id);
+}
+
 // Приём батча событий от клиента (POST /api/events)
 export function ingestEvents(req, batch) {
   const ua = String(req.headers['user-agent'] || '');
@@ -57,6 +120,9 @@ export function ingestEvents(req, batch) {
       const type = VALID_TYPES.has(e.type) ? e.type : null;
       if (!type) continue;
       const materialId = Number.isFinite(+e.material_id) ? +e.material_id : null;
+      // material_view с клиента не должен удваивать серверный подсчёт (стрим/читалка):
+      // если такой просмотр уже засчитан этому посетителю за последние 30 минут — пропускаем.
+      if (type === 'material_view' && viewRecentlyCounted('material_view', visitorId, ipHash, materialId)) continue;
       const folderId = Number.isFinite(+e.folder_id) ? +e.folder_id : null;
       const query = e.query != null ? String(e.query).slice(0, 200) : null;
       const value = Number.isFinite(+e.value) ? +e.value : null;

@@ -276,11 +276,32 @@ export async function streamLocalFile(req, res, filePath, { contentTypeHint = ''
   const stat = await fsp.stat(filePath);
   const type = contentTypeHint || mimeByPath(filePath);
   const total = stat.size;
+  // Слабый ETag из размера+mtime: файл заменили — тег изменился, браузер перезапросит контент.
+  const etag = `W/"${total}-${Math.floor(stat.mtimeMs)}"`;
+  // Inline-потоки кешируем с ревалидацией (повторное открытие — 304, без перекачивания);
+  // скачивание attachment остаётся no-store — файл должен приехать целиком и свежим.
+  const inm = req.headers['if-none-match'];
+  const ims = req.headers['if-modified-since'];
+  if (!attachment && !req.headers['range'] &&
+      (inm ? inm === etag || inm.split(',').some(t => t.trim() === etag) : false)) {
+    res.writeHead(304, { ETag: etag, 'Cache-Control': 'private, no-cache' });
+    return res.end();
+  }
+  if (!attachment && !inm && !req.headers['range'] && ims) {
+    // If-Modified-Since как запасной путь (сравнение с точностью до секунды)
+    const sinceMs = Date.parse(ims);
+    if (Number.isFinite(sinceMs) && Math.floor(stat.mtimeMs / 1000) <= Math.floor(sinceMs / 1000)) {
+      res.writeHead(304, { ETag: etag, 'Last-Modified': stat.mtime.toUTCString(), 'Cache-Control': 'private, no-cache' });
+      return res.end();
+    }
+  }
   const baseHeaders = {
     'Content-Type': type,
     'Accept-Ranges': 'bytes',
     'Last-Modified': stat.mtime.toUTCString(),
-    'Cache-Control': 'no-store',
+    ETag: etag,
+    'Cache-Control': attachment ? 'no-store' : 'private, no-cache',
+    Vary: 'Range',
   };
   if (attachment) {
     baseHeaders['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(fileName || path.basename(filePath))}`;

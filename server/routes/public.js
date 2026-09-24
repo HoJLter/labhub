@@ -6,7 +6,7 @@ import { get, all, run, now, getSettings, getSetting } from '../db.js';
 import { HttpError, sendJson, rateLimit, str } from '../http.js';
 import { resolveSource, streamLocalFile, streamRemote } from '../sources.js';
 import { searchMaterials, suggest } from '../search.js';
-import { ingestEvents, logSearch } from '../stats.js';
+import { ingestEvents, logSearch, countMaterialView } from '../stats.js';
 import { config } from '../config.js';
 
 let treeCache = { at: 0, data: null };
@@ -152,6 +152,13 @@ export function registerPublicRoutes(router) {
     }
     const storage = m.storage_id ? get('SELECT * FROM storages WHERE id = ?', m.storage_id) : null;
     const source = resolveSource(m, storage, { attachment });
+
+    // Серверный подсчёт просмотров: факт выдачи контента (не HEAD, не скачивание).
+    // Работает независимо от клиентской аналитики (DNT, потерянный батч, быстрый уход со страницы).
+    // Дедупликация 30 минут в countMaterialView гасит Range-дозапросы PDF.js и повторные открытия.
+    if (!attachment && req.method === 'GET') {
+      countMaterialView(req, m.id, m.folder_id, { src: 'stream' });
+    }
 
     if (source.type === 'redirect') {
       res.writeHead(302, { Location: source.url, 'Cache-Control': 'no-store' });

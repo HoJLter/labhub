@@ -380,7 +380,11 @@ function materialTable(materials) {
   const tbody = el('tbody');
   for (const m of materials) {
     const dur = fmtDuration(m.duration_sec);
-    tbody.append(el('tr', { onclick: () => navigate('/m/' + m.slug), style: 'cursor:pointer' },
+    tbody.append(el('tr', { onclick: e => {
+      if (e.target.closest('a,button')) return;   // клики по кнопкам строки обрабатываются сами
+      if (canReadOnline(m)) location.href = openTarget(m);
+      else navigate('/m/' + m.slug);
+    }, style: 'cursor:pointer' },
       el('td', {},
         el('div', { class: 'mat-title-cell' },
           kindIcon(m.kind),
@@ -413,20 +417,28 @@ function kindIcon(kind) {
   return el('span', { class: `kind-icon kind-${kind}`, html: ICONS[KIND_ICON[kind] || 'link'] });
 }
 
+// Материалы, которые читалка умеет показывать сама (pdf/видео/картинка/внешний плеер),
+// открываются по клику сразу в читалке; остальные (docx, внешние ссылки) — на странице материала.
+function canReadOnline(m) {
+  return m.kind === 'pdf' || m.kind === 'video' || m.kind === 'image' || m.source_type === 'embed';
+}
+function openTarget(m) {
+  return canReadOnline(m) ? '/view/' + m.slug : '/m/' + m.slug;
+}
+
 function readButton(m, small = false) {
-  const canRead = m.kind === 'pdf' || m.kind === 'video' || m.kind === 'image' || m.source_type === 'embed';
-  if (!canRead) return null;
+  if (!canReadOnline(m)) return null;
   const label = m.kind === 'video' ? 'Смотреть' : m.kind === 'image' ? 'Открыть' : 'Читать онлайн';
   const href = `/view/${m.slug}`;
-  return el('a', {
-    class: 'btn btn-primary' + (small ? ' btn-sm' : ''), href,
-    onclick: () => Analytics.push({ type: 'reader_open', material_id: m.id }),
-  }, iconSvg('read'), label);
+  // reader_open считает сервер при выдаче /view/:slug — клиентский дубль не нужен
+  return el('a', { class: 'btn btn-primary' + (small ? ' btn-sm' : ''), href }, iconSvg('read'), label);
 }
 
 function materialCard(m) {
   const dur = fmtDuration(m.duration_sec);
-  return el('a', { class: 'mat-card', href: '/m/' + m.slug, 'data-link': true },
+  // Читаемые материалы открываются сразу в читалке (полноценный переход, не SPA)
+  const href = openTarget(m);
+  return el('a', { class: 'mat-card', href, 'data-link': canReadOnline(m) ? undefined : true },
     el('div', { class: 'mc-head' }, kindIcon(m.kind),
       el('div', { class: 'grow' },
         el('h3', {}, m.title),
@@ -444,7 +456,7 @@ async function renderMaterial(view, slug) {
   const m = data.material;
   Analytics.push({ type: 'material_view', material_id: m.id, folder_id: m.folder_id });
   view.innerHTML = '';
-  view.append(breadcrumbs(data.breadcrumb, { title: m.title }));
+  view.append(breadcrumbs(data.breadcrumb, m.title));
 
   const dur = fmtDuration(m.duration_sec);
   const page = el('div', { class: 'mat-page fade-in' });
@@ -486,7 +498,7 @@ async function renderMaterial(view, slug) {
   } else if (m.poster) {
     hero.append(el('div', { class: 'mat-preview' },
       el('img', { src: m.poster, alt: 'Превью: ' + m.title, loading: 'lazy' }),
-      read ? el('div', { class: 'play-overlay', onclick: () => { Analytics.push({ type: 'reader_open', material_id: m.id }); navigate('/view/' + m.slug); } },
+      read ? el('div', { class: 'play-overlay', onclick: () => { location.href = '/view/' + m.slug; } },
         el('span', { class: 'play-circle', html: ICONS.play })) : null));
   } else if (m.kind === 'pdf' || m.kind === 'docx') {
     hero.append(el('div', { class: 'mat-preview', style: 'display:grid;place-items:center;padding:40px 20px;color:var(--text-3)' },
@@ -515,7 +527,7 @@ async function renderMaterial(view, slug) {
     for (const r of data.related) {
       rel.append(el('div', { class: 'related-item' },
         el('span', { class: `kind-icon kind-${r.kind}`, html: ICONS[KIND_ICON[r.kind] || 'link'] }),
-        el('a', { href: '/m/' + r.slug, 'data-link': true }, r.title)));
+        el('a', { href: openTarget(r), 'data-link': canReadOnline(r) ? undefined : true }, r.title)));
     }
     side.append(rel);
   }
@@ -563,7 +575,6 @@ function videoBlock(m) {
       if (p >= q && !quartiles.has(q)) { quartiles.add(q); Analytics.push({ type: 'video_progress', material_id: m.id, value: q }); }
     }
   });
-  video.addEventListener('play', () => Analytics.push({ type: 'reader_open', material_id: m.id }));
   return el('div', { class: 'mat-preview' }, video);
 }
 
@@ -617,9 +628,15 @@ searchInput.addEventListener('input', () => {
       const items = (data.suggestions || []).slice(0, 7);
       suggestBox.innerHTML = '';
       for (const it of items) {
+        // папки → SPA; читаемые материалы → сразу читалка; остальные → страница материала
+        const readable = it.kind !== 'folder' && canReadOnline(it);
+        const href = it.kind === 'folder' ? '/' + it.slug : (readable ? '/view/' + it.slug : '/m/' + it.slug);
         suggestBox.append(el('a', {
-          href: it.kind === 'folder' ? '/' + it.slug : '/m/' + it.slug, role: 'option',
-          onclick: e => { e.preventDefault(); suggestBox.classList.remove('open'); navigate(it.kind === 'folder' ? '/' + it.slug : '/m/' + it.slug); }
+          href, role: 'option',
+          onclick: e => {
+            e.preventDefault(); suggestBox.classList.remove('open');
+            if (readable) location.href = href; else navigate(href);
+          }
         }, iconSvg(it.kind === 'folder' ? 'folder' : (KIND_ICON[it.kind] || 'link')),
           el('span', { html: highlight(it.title, q) }),
           el('span', { class: 'sg-kind' }, it.kind === 'folder' ? 'папка' : (KIND_LABEL[it.kind] || it.kind))));
@@ -702,7 +719,45 @@ async function renderNotesRoute(view, path) {
   if (seg === 'graph') return renderNotesGraph(view);
   if (seg === 'tags') return renderNotesTags(view);
   if (seg === 'tag') return renderTagPage(view, parts[2] ? decodeURIComponent(parts[2]) : '');
+  if (seg === 'folder') return renderNotesFolder(view, parts.slice(2).join('/'));
   return renderNote(view, seg);
+}
+
+// ——— Папки заметок (дерево каталогов vault, как папки материалов) ———
+function notesFolderHref(dir) {
+  return '/notes/folder/' + dir.split('/').map(encodeURIComponent).join('/');
+}
+
+/** dir → { count (с подпапками), parent } для всех каталогов vault по списку заметок. */
+function notesFolderTree(notes) {
+  const tree = new Map();
+  for (const n of notes) {
+    const parts = (n.folder || '').split('/').filter(Boolean);
+    let acc = '';
+    for (const part of parts) {
+      const parent = acc;
+      acc = acc ? acc + '/' + part : part;
+      if (!tree.has(acc)) tree.set(acc, { count: 0, parent });
+      tree.get(acc).count++;   // заметка учитывается в каждом предке
+    }
+  }
+  return tree;
+}
+
+function notesFolderCard(dir, count) {
+  const segs = dir.split('/');
+  return el('a', { class: 'subject-card', href: notesFolderHref(dir), 'data-link': true, style: '--c:var(--accent)' },
+    el('span', { class: 'sc-icon', html: ICONS.folder }),
+    el('h3', {}, segs[segs.length - 1]),
+    el('p', {}, segs.length > 1 ? segs.slice(0, -1).join(' / ') : 'Папка заметок'),
+    el('div', { class: 'sc-meta' }, el('span', {}, count + ' ' + pluralNotes(count))));
+}
+
+function pluralNotes(n) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return 'заметка';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'заметки';
+  return 'заметок';
 }
 
 function noteCard(n) {
@@ -730,18 +785,21 @@ async function renderNotesIndex(view) {
     return;
   }
 
-  const groups = new Map();
-  for (const n of notes) {
-    const dir = n.folder || '';
-    if (!groups.has(dir)) groups.set(dir, []);
-    groups.get(dir).push(n);
+  // Корень vault: показываем папки (подпапки), а не все заметки сразу — как дерево каталогов.
+  const tree = notesFolderTree(notes);
+  const topDirs = [...tree.keys()].filter(d => !tree.get(d).parent).sort((a, b) => a.localeCompare(b, 'ru'));
+  const rootNotes = notes.filter(n => !(n.folder || ''));
+
+  if (topDirs.length) {
+    view.append(el('div', { class: 'section-head' }, el('h2', {}, 'Папки'), el('span', { class: 'count' }, String(topDirs.length))));
+    const grid = el('div', { class: 'cards-grid fade-in' });
+    for (const d of topDirs) grid.append(notesFolderCard(d, tree.get(d).count));
+    view.append(grid);
   }
-  for (const [dir, list] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ru'))) {
-    view.append(el('div', { class: 'section-head' },
-      el('h2', {}, dir || 'Корень vault'),
-      el('span', { class: 'count' }, String(list.length))));
+  if (rootNotes.length) {
+    view.append(el('div', { class: 'section-head' }, el('h2', {}, 'Без папки'), el('span', { class: 'count' }, String(rootNotes.length))));
     const grid = el('div', { class: 'notes-grid fade-in' });
-    for (const n of list) grid.append(noteCard(n));
+    for (const n of rootNotes) grid.append(noteCard(n));
     view.append(grid);
   }
 
@@ -756,14 +814,68 @@ async function renderNotesIndex(view) {
   }
 }
 
+async function renderNotesFolder(view, dir) {
+  const data = await api('/api/notes');
+  const notes = data.notes || [];
+  dir = decodeURIComponent(dir).replace(/\/+$/, '');
+  const parts = dir.split('/').filter(Boolean);
+  view.innerHTML = '';
+
+  // Хлебные крошки по дереву папок vault
+  const bc = el('nav', { class: 'breadcrumbs', 'aria-label': 'Хлебные крошки' },
+    el('a', { href: '/notes', 'data-link': true }, 'Заметки'));
+  let acc = '';
+  for (const part of parts) {
+    acc = acc ? acc + '/' + part : part;
+    const href = notesFolderHref(acc);
+    bc.append(el('span', { class: 'sep' }, '/'));
+    if (acc === dir) bc.append(el('span', {}, part));
+    else bc.append(el('a', { href, 'data-link': true }, part));
+  }
+  view.append(bc);
+  view.append(el('div', { class: 'page-head fade-in' },
+    el('h1', { class: 'page-title' }, parts.at(-1) || 'Заметки'),
+    el('p', { class: 'page-sub' }, 'Папка vault: ' + (dir || '/'))));
+
+  const tree = notesFolderTree(notes);
+  const subDirs = [...tree.keys()]
+    .filter(d => tree.get(d).parent === dir)
+    .sort((a, b) => a.localeCompare(b, 'ru'));
+  const own = notes.filter(n => (n.folder || '') === dir);
+
+  if (!subDirs.length && !own.length) {
+    view.append(emptyState('Папка пуста', 'В этой папке нет заметок.'));
+    return;
+  }
+  if (subDirs.length) {
+    view.append(el('div', { class: 'section-head' }, el('h2', {}, 'Подпапки'), el('span', { class: 'count' }, String(subDirs.length))));
+    const grid = el('div', { class: 'cards-grid fade-in' });
+    for (const d of subDirs) grid.append(notesFolderCard(d, tree.get(d).count));
+    view.append(grid);
+  }
+  if (own.length) {
+    view.append(el('div', { class: 'section-head' }, el('h2', {}, 'Заметки'), el('span', { class: 'count' }, String(own.length))));
+    const grid = el('div', { class: 'notes-grid fade-in' });
+    for (const n of own) grid.append(noteCard(n));
+    view.append(grid);
+  }
+}
+
 async function renderNote(view, slug) {
   const data = await api('/api/notes/' + encodeURIComponent(slug));
   const n = data.note;
   view.innerHTML = '';
-  view.append(el('nav', { class: 'breadcrumbs', 'aria-label': 'Хлебные крошки' },
-    el('a', { href: '/notes', 'data-link': true }, 'Заметки'),
-    el('span', { class: 'sep' }, '/'),
-    el('span', {}, n.title)));
+  // крошки: Заметки / папка / подпапка / заголовок
+  const bc = el('nav', { class: 'breadcrumbs', 'aria-label': 'Хлебные крошки' },
+    el('a', { href: '/notes', 'data-link': true }, 'Заметки'));
+  const dirParts = (n.folder || '').split('/').filter(Boolean);
+  let acc = '';
+  for (const part of dirParts) {
+    acc = acc ? acc + '/' + part : part;
+    bc.append(el('span', { class: 'sep' }, '/'), el('a', { href: notesFolderHref(acc), 'data-link': true }, part));
+  }
+  bc.append(el('span', { class: 'sep' }, '/'), el('span', {}, n.title));
+  view.append(bc);
 
   const layout = el('div', { class: 'note-layout fade-in' });
   const article = el('article', { class: 'note-article markdown-body' });
